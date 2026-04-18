@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, KeyboardEvent } from 'react'
+import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
 import { X, Send, Bot, User, Loader, Sparkles, RefreshCw } from 'lucide-react'
 import { COLORS } from '../lib/utils'
 

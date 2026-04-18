@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowUpRight, ArrowDownRight,
-  Zap, Activity, CheckCircle, BarChart2,
+  ArrowUpRight,
+  Zap, CheckCircle, BarChart2,
   Car, TrendingDown, ShieldAlert, ListChecks, Activity as ActivityIcon,
 } from 'lucide-react'
 import {
