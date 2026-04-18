@@ -206,7 +206,7 @@ def get_services_health():
     freshness and registry state. No external processes are pinged.
     """
     now = datetime.now(timezone.utc)
-    STALE_SECONDS = int(os.environ.get("SERVICE_STALE_SECONDS", "604800"))  # default: 7 days; tighten via env in prod
+    STALE_SECONDS = int(os.environ.get("SERVICE_STALE_SECONDS", "3600"))  # default: 1 h; override via env in prod
 
     def _file_age(path: Path) -> float | None:
         """Return seconds since last modification, or None if missing."""

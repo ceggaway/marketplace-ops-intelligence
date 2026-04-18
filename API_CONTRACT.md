@@ -11,17 +11,16 @@ enforced through FastAPI `response_model`s.
 
 ## Notes On Compatibility
 
-Some field names still use the earlier "delay risk" framing because the
-frontend depends on them.
+Some field names retain the earlier "delay risk" framing because the frontend
+still consumes them under those names.
 
 Compatibility fields still in use:
-- `delay_risk_score`
-- `predicted_demand_next_hour`
-- `fulfilment_rate`
-- `avg_delivery_time_min`
+- `delay_risk_score` — the LightGBM shortage probability (0–1)
+- `fulfilment_rate` — ratio of zones that scored below the high-risk threshold
 
-Those names should be read as UI compatibility fields, not as proof that the
-current backend is modeling delivery delay directly.
+Fields that were planned but never shipped and are **not** present in the API:
+- ~~`predicted_demand_next_hour`~~ — removed
+- ~~`avg_delivery_time_min`~~ — removed
 
 ## GET `/overview`
 
@@ -127,10 +126,27 @@ Query params:
     "confidence": 0.85,
     "priority": "high",
     "explanation_tag": "rapid depletion + peak hour",
-    "last_updated": "2026-04-17T04:00:00Z"
+    "last_updated": "2026-04-17T04:00:00Z",
+    "eta_minutes": 20,
+    "intervention_window": "tight",
+    "adjacent_risk_zones": "Dhoby Ghaut, Newton",
+    "network_warning": "2 adjacent zones also at high risk — coordinated response recommended",
+    "root_cause": "weather",
+    "alternative_actions": "[{\"action\": \"Dynamic pricing surge\", \"cost\": \"low\", \"time_to_effect\": \"5 min\", \"viability\": \"high\"}]"
   }
 ]
 ```
+
+Engine v2 optional fields (all nullable):
+
+| field | type | description |
+|---|---|---|
+| `eta_minutes` | int | estimated minutes until intervention takes effect |
+| `intervention_window` | string | `"tight"` \| `"moderate"` \| `"flexible"` |
+| `adjacent_risk_zones` | string | comma-separated names of neighbouring high-risk zones |
+| `network_warning` | string | human-readable network-effect warning, if any |
+| `root_cause` | string | `"weather"` \| `"event"` \| `"peak_hour"` \| `"depletion"` \| `"supply_gap"` |
+| `alternative_actions` | string | JSON array of `{action, cost, time_to_effect, viability}` objects |
 
 ## GET `/model/status`
 
@@ -177,7 +193,7 @@ Query params:
   "timestamp": "2026-04-17T01:00:00Z",
   "rows_scored": 1320,
   "failed_rows": 0,
-  "flagged_zones": 200,
+  "flagged_zones": 12,
   "drift_flag": false,
   "rollback_status": false,
   "run_status": "success",
@@ -187,9 +203,14 @@ Query params:
   "logged_at": "2026-04-17T01:00:01Z",
   "avg_delay_min": 8.5,
   "fulfilment_rate": 0.72,
-  "total_taxi_count": 4200
+  "total_taxi_count": 15391,
+  "supply_now": 482,
+  "high_risk_zones_now": 12,
+  "rapid_depletion_zones": 3
 }
 ```
+
+`total_taxi_count` is the sum across all scored rows (multi-zone, multi-snapshot) — it is **not** a real-time taxi count. Use `supply_now` for the current active taxi count in the snapshot.
 
 ## GET `/monitoring/drift`
 
@@ -268,7 +289,8 @@ Known `alert_id` values emitted by the system:
 ## GET `/health/services`
 
 Returns the health of each logical service, based on output file freshness.
-Files older than 2 hours are marked `degraded`; missing files are `down`.
+Default stale threshold: 1 hour (`SERVICE_STALE_SECONDS` env var, default `3600`).
+Files older than the threshold are marked `degraded`; missing files are `down`.
 
 ```json
 {
