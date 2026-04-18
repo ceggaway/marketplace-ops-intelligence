@@ -286,6 +286,34 @@ Known `alert_id` values emitted by the system:
 | `ROLLBACK_FAILED` | high | rollback attempt failed |
 | `HIGH_FAILED_ROWS` | medium | >10% rows failed validation |
 
+## POST `/ai/chat`
+
+Requires `ANTHROPIC_API_KEY` in the server environment. Without a key the
+endpoint returns the assembled ops context as a plain-text reply so the
+frontend can show something useful in development.
+
+Request body:
+
+```json
+{
+  "message": "Which zones are at highest risk right now?",
+  "history": [
+    { "role": "user",      "content": "previous turn" },
+    { "role": "assistant", "content": "previous reply" }
+  ]
+}
+```
+
+Response:
+
+```json
+{ "reply": "Orchard and Raffles Place are at highest risk with scores above 0.85..." }
+```
+
+`history` is optional (default `[]`). Messages are prepended with a live ops
+context snapshot (zone counts, top-risk zones, latest drift, recommendations)
+so the AI can answer questions about the current pipeline state.
+
 ## GET `/health/services`
 
 Returns the health of each logical service, based on output file freshness.

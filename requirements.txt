@@ -16,6 +16,7 @@ kaggle>=1.6            # optional: Kaggle API for dataset download
 fastapi>=0.111
 uvicorn[standard]>=0.29
 pydantic>=2.7
+anthropic>=0.25          # ai/chat endpoint
 
 # ── Visualisation / Notebooks ─────────────────────
 matplotlib>=3.8

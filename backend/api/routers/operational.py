@@ -285,20 +285,13 @@ def get_zone_detail(zone_id: int):
         if not zone_rec.empty:
             rec = zone_rec.iloc[0].to_dict()
 
-    # Build trend history from pipeline log and per-zone score history.
-    # demand_trend: total taxi count across all zones per run (system-level signal).
-    # delay_trend: avg estimated delay from pipeline log.
-    # risk_score_history: real per-zone historical scores from zone_scores_history.jsonl.
-    log_recs   = _read_pipeline_log(n=48)
-    demand_trend = [
-        {"timestamp": r.get("timestamp", ""), "value": r.get("total_taxi_count", 0)}
-        for r in log_recs if "timestamp" in r and "total_taxi_count" in r
-    ]
-    delay_trend = [
-        {"timestamp": r.get("timestamp", ""), "value": r.get("avg_delay_min", 0)}
-        for r in log_recs if "timestamp" in r and "avg_delay_min" in r
-    ]
-    score_hist = _read_zone_score_history(zone_id, n=48)
+    # risk_score_history: real per-zone historical risk scores from zone_scores_history.jsonl.
+    # demand_trend / delay_trend: we have no per-zone taxi-count or delay-time history —
+    # returning empty arrays rather than system-level pipeline aggregates which would be
+    # semantically misleading when presented as zone-specific data.
+    score_hist   = _read_zone_score_history(zone_id, n=48)
+    demand_trend: list[dict] = []
+    delay_trend:  list[dict] = []
 
     return {
         "zone_id":             zone_id,

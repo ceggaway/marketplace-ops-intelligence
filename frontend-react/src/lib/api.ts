@@ -1,4 +1,7 @@
-const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
+// VITE_API_BASE_URL must be set at build time for production deployments.
+// In dev, Vite proxies /api/* to localhost:8000 via vite.config.ts.
+// Falls back to /api/v1 (relative) so any reverse-proxy setup works without env config.
+const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
 export interface TrendPoint { timestamp: string; value: number }
 
