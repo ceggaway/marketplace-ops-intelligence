@@ -1,0 +1,63 @@
+# Global configuration — Singapore Marketplace Ops Intelligence
+
+geography:
+  country: Singapore
+  timezone: Asia/Singapore
+  bbox:                     # Singapore bounding box for GPS filtering
+    lat_min: 1.15
+    lat_max: 1.48
+    lon_min: 103.60
+    lon_max: 104.10
+  centroid:                 # Used for Open-Meteo weather API calls
+    lat: 1.3521
+    lon: 103.8198
+  n_zones: 55               # URA planning areas
+
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  outputs_dir: data/outputs
+  registry_dir: data/registry
+  zone_lookup: data/raw/sg_planning_areas.geojson
+  holidays: data/raw/sg_public_holidays.json
+
+ingestion:
+  lta_api_key_env: LTA_API_KEY          # env var name (set in .env)
+  lta_poll_interval_min: 5              # how often to snapshot taxi availability
+  grab_posisi_path: data/raw/grab_posisi/
+
+# Singapore-specific peak hours (SGT = UTC+8)
+features:
+  peak_hours_morning: [7, 8, 9]         # 07:00–09:59 SGT
+  peak_hours_evening: [17, 18, 19, 20]  # 17:00–20:59 SGT
+  rain_wmo_codes: [61,63,65,67,80,81,82,95,96,99]  # WMO codes for rain/storms
+  lag_hours: [1, 2, 3, 24]             # lag feature offsets
+  rolling_windows: [3, 6, 12]          # rolling mean window sizes (hours)
+
+model:
+  type: lightgbm            # "lightgbm" | "xgboost" | "sklearn"
+  target: high_delay_risk   # binary classification target
+  risk_high_threshold: 0.70
+  risk_med_threshold: 0.40
+
+training:
+  val_fraction: 0.20
+  random_seed: 42
+  n_estimators: 500
+  learning_rate: 0.05
+
+scoring:
+  batch_schedule: "0 * * * *"   # every hour (cron, SGT)
+
+monitoring:
+  failed_row_pct_threshold: 0.20   # trigger rollback if >20% rows fail
+  psi_alert_threshold: 0.25
+  psi_warn_threshold: 0.10
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+
+frontend:
+  api_base_url: "http://localhost:8000/api/v1"
+  refresh_interval_sec: 60

@@ -1,0 +1,86 @@
+name: Daily Batch
+
+# Trigger: scheduled daily at 01:00 SGT (= 17:00 UTC prev day)
+# Purpose: production batch scoring run — generate inputs, score, save outputs, emit metrics
+on:
+  schedule:
+    - cron: "0 17 * * *"   # 17:00 UTC = 01:00 SGT
+  workflow_dispatch:        # allow manual trigger from GitHub UI
+
+jobs:
+  daily-batch:
+    name: Daily batch scoring
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure trained model exists (train if model.pkl is missing)
+        run: |
+          python - <<'EOF'
+          import json, pathlib, sys, re
+
+          reg_path = pathlib.Path("data/registry/registry.json")
+          active = None
+          if reg_path.exists():
+              # Python json accepts NaN; use re to normalise it to null first so
+              # any downstream tooling also parses the file safely.
+              raw = reg_path.read_text()
+              raw_clean = re.sub(r':\s*NaN\b', ': null', raw)
+              if raw_clean != raw:
+                  reg_path.write_text(raw_clean)
+                  print("Normalised NaN → null in registry.json")
+              active = json.loads(raw_clean).get("active_version")
+
+          model_pkl = pathlib.Path(f"data/registry/models/{active}/model.pkl") if active else None
+          if active and model_pkl and model_pkl.exists():
+              print(f"Active model {active} found on disk — skipping training.")
+          else:
+              reason = "no active version in registry" if not active else f"model.pkl missing for {active}"
+              print(f"Training required: {reason}")
+              import subprocess
+              result = subprocess.run(
+                  ["python", "scripts/run_training.py",
+                   "--version", "v_ci", "--days", "60",
+                   "--skip-gate", "--allow-synthetic"],
+                  capture_output=False
+              )
+              sys.exit(result.returncode)
+          EOF
+
+      - name: Run daily batch scoring
+        run: python scripts/run_scoring.py --allow-synthetic
+
+      - name: Upload outputs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: batch-outputs-${{ github.run_id }}
+          path: data/outputs/
+          retention-days: 7
+
+      - name: Log pipeline summary
+        run: |
+          python - <<'EOF'
+          import json, pathlib
+          log = pathlib.Path("data/outputs/pipeline.log")
+          if log.exists():
+              lines = log.read_text().strip().splitlines()
+              if lines:
+                  last = json.loads(lines[-1])
+                  print(f"run_id      : {last.get('run_id')}")
+                  print(f"rows_scored : {last.get('rows_scored')}")
+                  print(f"failed_rows : {last.get('failed_rows')}")
+                  print(f"flagged     : {last.get('flagged_zones')}")
+                  print(f"drift_flag  : {last.get('drift_flag')}")
+                  print(f"rollback    : {last.get('rollback_status')}")
+                  print(f"status      : {last.get('run_status')}")
+          EOF

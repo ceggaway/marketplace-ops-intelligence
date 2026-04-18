@@ -1,0 +1,81 @@
+name: Verify Pipeline
+
+# Trigger: every push to main (post-merge gate)
+# Purpose: end-to-end validation — run training + batch scoring + verify output schema
+on:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    name: End-to-end pipeline verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run training pipeline (skip gate for CI speed)
+        run: python scripts/run_training.py --version v1 --days 30 --skip-gate --allow-synthetic
+
+      - name: Verify model artifacts exist
+        run: |
+          python - <<'EOF'
+          import json, pathlib, sys
+          base = pathlib.Path("data/registry/models/v1")
+          for fname in ["model.pkl", "metrics.json", "feature_schema.json", "version_meta.json"]:
+              p = base / fname
+              if not p.exists():
+                  print(f"MISSING: {p}")
+                  sys.exit(1)
+              print(f"OK: {p}")
+          metrics = json.loads((base / "metrics.json").read_text())
+          auc = metrics.get("roc_auc", 0)
+          print(f"AUC={auc:.4f}")
+          if auc < 0.60:
+              print("FAIL: AUC below 0.60")
+              sys.exit(1)
+          EOF
+
+      - name: Run batch scoring
+        run: python scripts/run_scoring.py --allow-synthetic
+
+      - name: Verify output files exist
+        run: |
+          python - <<'EOF'
+          import pathlib, sys
+          outputs = pathlib.Path("data/outputs")
+          required = ["predictions.csv", "flagged_zones.csv", "recommended_actions.csv",
+                      "failed_rows.csv", "pipeline.log"]
+          for fname in required:
+              p = outputs / fname
+              if not p.exists():
+                  print(f"MISSING: {p}")
+                  sys.exit(1)
+              print(f"OK: {p}")
+          EOF
+
+      - name: Verify predictions schema
+        run: |
+          python - <<'EOF'
+          import pandas as pd, sys
+          df = pd.read_csv("data/outputs/predictions.csv")
+          required_cols = ["zone_id", "zone_name", "delay_risk_score", "risk_level"]
+          for col in required_cols:
+              if col not in df.columns:
+                  print(f"MISSING COLUMN: {col}")
+                  sys.exit(1)
+          out_of_range = ((df["delay_risk_score"] < 0) | (df["delay_risk_score"] > 1)).sum()
+          if out_of_range > 0:
+              print(f"FAIL: {out_of_range} scores outside [0,1]")
+              sys.exit(1)
+          print(f"Predictions: {len(df)} rows, all scores in [0,1]")
+          EOF

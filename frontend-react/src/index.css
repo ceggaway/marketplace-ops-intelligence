@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  min-height: 100vh;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #060D1A;
+  color: rgba(255,255,255,0.92);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Avalon dark navy glass ──────────────────────────────────────────────── */
+.glass {
+  background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 100%);
+  border: 1px solid rgba(99,140,255,0.14);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+.glass-sm {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(99,140,255,0.10);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.glass-sidebar {
+  background: rgba(4,9,22,0.94);
+  border-right: 1px solid rgba(99,140,255,0.10);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.glass-topbar {
+  background: rgba(5,10,24,0.88);
+  border-bottom: 1px solid rgba(99,140,255,0.10);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ── Button styles ───────────────────────────────────────────────────────── */
+.btn-glass {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  color: rgba(255,255,255,0.82);
+  font-size: 0.80rem;
+  font-weight: 400;
+  font-family: 'Inter', sans-serif;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: transform 0.20s ease, box-shadow 0.20s ease, background 0.20s ease;
+  backdrop-filter: blur(10px);
+}
+.btn-glass:hover {
+  transform: scale(1.04);
+  background: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 100%);
+  border-color: rgba(255,255,255,0.28);
+}
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #4F8EF7;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.80rem;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.btn-primary:hover { transform: scale(1.04); opacity: 0.92; }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(99,140,255,0.20); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(99,140,255,0.35); }
+
+/* ── Recharts ─────────────────────────────────────────────────────────────── */
+.recharts-text { fill: rgba(255,255,255,0.35) !important; font-size: 10px !important; font-family: Inter, sans-serif !important; }
+.recharts-cartesian-grid line { stroke: rgba(255,255,255,0.05) !important; }
+.recharts-tooltip-cursor { fill: rgba(255,255,255,0.03) !important; }
+
+/* ── Leaflet overrides ───────────────────────────────────────────────────── */
+.leaflet-container { background: #060D1A; }
+.leaflet-control-zoom a { background: rgba(10,18,40,0.90) !important; color: rgba(255,255,255,0.70) !important; border-color: rgba(99,140,255,0.20) !important; }
+.leaflet-control-attribution { display: none !important; }
+.leaflet-popup-content-wrapper { background: rgba(8,16,36,0.96) !important; border: 1px solid rgba(99,140,255,0.20) !important; border-radius: 10px !important; color: rgba(255,255,255,0.88) !important; box-shadow: 0 8px 32px rgba(0,0,0,0.50) !important; }
+.leaflet-popup-tip { background: rgba(8,16,36,0.96) !important; }
+
+/* ── Spinner ──────────────────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg) } }
+
+/* ── Shimmer for loading states ──────────────────────────────────────────── */
+@keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%);
+  background-size: 400px 100%;
+  animation: shimmer 1.6s infinite;
+}

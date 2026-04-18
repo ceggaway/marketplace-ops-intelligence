@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Data (keep structure, ignore large files)
+data/raw/*.parquet
+data/raw/*.csv
+data/raw/taxi_snapshots/
+data/raw/carpark_snapshots/
+data/raw/travel_time_snapshots/
+data/processed/
+data/outputs/
+data/registry/models/
+data/logs/
+
+# Model artifacts
+*.pkl
+*.joblib
+*.bin
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Node / Vite
+frontend-react/node_modules/
+frontend-react/dist/
