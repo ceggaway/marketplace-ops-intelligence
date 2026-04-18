@@ -347,12 +347,14 @@ def test_alerts_200():
 
 
 def test_alerts_includes_persisted_alerts():
+    from datetime import datetime, timezone
+    recent = datetime.now(timezone.utc).isoformat()
     persisted = [{
         "alert_id": "DRIFT_ALERT",
         "severity": "high",
         "message": "PSI=0.31 — significant drift",
         "zone_id": None,
-        "created_at": "2024-01-01T08:00:00+00:00",
+        "created_at": recent,
     }]
     with patch("backend.api.routers.ml_health.get_active_alerts", return_value=persisted), \
          patch("backend.api.routers.ml_health.get_latest_runs", return_value=[]):
@@ -364,12 +366,14 @@ def test_alerts_includes_persisted_alerts():
 
 def test_alerts_deduplicates_by_alert_id():
     """alerts.log entry should not appear twice if both log and on-the-fly check fire."""
+    from datetime import datetime, timezone
+    recent = datetime.now(timezone.utc).isoformat()
     persisted = [{
         "alert_id": "HIGH_FAILED_ROWS",
         "severity": "medium",
         "message": "persisted alert",
         "zone_id": None,
-        "created_at": "2024-01-01T08:00:00+00:00",
+        "created_at": recent,
     }]
     runs_with_failures = [{**_SAMPLE_LOG[0], "failed_rows": 200, "rows_scored": 1000}]
     with patch("backend.api.routers.ml_health.get_active_alerts", return_value=persisted), \
