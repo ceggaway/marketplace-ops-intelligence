@@ -84,7 +84,11 @@ class RecommendationCard(BaseModel):
     adjacent_risk_zones: Optional[str] = None
     network_warning: Optional[str] = None
     root_cause: Optional[str] = None
+    action_id: Optional[str] = None
     action_type: Optional[str] = None
+    pricing_level: Optional[str] = None
+    incentive_level: Optional[str] = None
+    push_level: Optional[str] = None
     expected_recovery_rate: Optional[float] = None
     expected_improvement_rate: Optional[float] = None
     estimated_score_delta: Optional[float] = None
@@ -92,6 +96,13 @@ class RecommendationCard(BaseModel):
     evidence_count: Optional[int] = None
     follow_rate: Optional[float] = None
     policy_rank_reason: Optional[str] = None
+    estimated_cost_sgd: Optional[float] = None
+    expected_supply_response_30m: Optional[float] = None
+    expected_recovery_probability: Optional[float] = None
+    expected_roi: Optional[float] = None
+    decision_objective: Optional[str] = None
+    winning_reason: Optional[str] = None
+    constraints_triggered: Optional[str] = None
     alternative_actions: Optional[str] = None
 
 

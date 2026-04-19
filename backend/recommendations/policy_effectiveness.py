@@ -17,11 +17,24 @@ OUTCOME_LOG = Path("data/outputs/recommendation_outcomes.jsonl")
 MIN_EVIDENCE = 3
 
 
+def _safe_float(value) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
 def action_type_from_recommendation(priority: str, recommendation: str) -> str:
     """Derive a canonical action type from free-text recommendation content."""
     rec_lower = recommendation.lower()
     if "escalat" in rec_lower:
         return "escalation"
+    if ("surge" in rec_lower or "fare" in rec_lower or "pricing" in rec_lower) and ("incentive" in rec_lower or "bonus" in rec_lower):
+        return "surge_plus_incentive"
+    if ("surge" in rec_lower or "fare" in rec_lower or "pricing" in rec_lower) and ("push" in rec_lower or "notification" in rec_lower or "notify" in rec_lower):
+        return "surge_plus_push"
     if "surge" in rec_lower or "fare" in rec_lower or "pricing" in rec_lower:
         return "surge_pricing"
     if "incentive" in rec_lower or "bonus" in rec_lower:
@@ -81,6 +94,9 @@ def summarise_action_outcomes(records: Iterable[dict]) -> dict:
             "recovery_rate": 0.0,
             "improvement_rate": 0.0,
             "estimated_score_delta": 0.0,
+            "expected_supply_response_30m": 0.0,
+            "avg_estimated_cost_sgd": 0.0,
+            "expected_roi": 0.0,
             "confidence_band": "low",
         }
 
@@ -98,16 +114,29 @@ def summarise_action_outcomes(records: Iterable[dict]) -> dict:
 
     recovered = sum(1 for r in effective_sample if r.get("outcome") == "recovered")
     improved = sum(1 for r in effective_sample if r.get("outcome") in ("recovered", "improved"))
-    deltas = [
-        float(r.get("score_after", 0)) - float(r.get("score_at_time", 0))
-        for r in effective_sample
-        if r.get("score_after") is not None and r.get("score_at_time") is not None
-    ]
+    deltas = []
+    supply_deltas = []
+    estimated_costs = []
+    for record in effective_sample:
+        score_after = _safe_float(record.get("score_after"))
+        score_at_time = _safe_float(record.get("score_at_time"))
+        if score_after is not None and score_at_time is not None:
+            deltas.append(score_after - score_at_time)
+        supply_delta = _safe_float(record.get("supply_delta_30m"))
+        if supply_delta is not None:
+            supply_deltas.append(supply_delta)
+        est_cost = _safe_float(record.get("estimated_cost_sgd"))
+        if est_cost is not None:
+            estimated_costs.append(est_cost)
 
     # Beta-style smoothing keeps tiny samples from looking falsely certain.
     recovery_rate = (recovered + 1) / (n + 2) if n else 0.0
     improvement_rate = (improved + 1) / (n + 2) if n else 0.0
     estimated_score_delta = sum(deltas) / len(deltas) if deltas else 0.0
+    expected_supply_response_30m = sum(supply_deltas) / len(supply_deltas) if supply_deltas else 0.0
+    avg_estimated_cost_sgd = sum(estimated_costs) / len(estimated_costs) if estimated_costs else 0.0
+    benefit_units = recovery_rate * 2.0 + improvement_rate + max(expected_supply_response_30m, 0.0) * 0.1 + max(-estimated_score_delta, 0.0) * 5.0
+    expected_roi = benefit_units / avg_estimated_cost_sgd if avg_estimated_cost_sgd > 0 else benefit_units
 
     return {
         "total": total,
@@ -118,6 +147,9 @@ def summarise_action_outcomes(records: Iterable[dict]) -> dict:
         "recovery_rate": round(recovery_rate, 4),
         "improvement_rate": round(improvement_rate, 4),
         "estimated_score_delta": round(estimated_score_delta, 4),
+        "expected_supply_response_30m": round(expected_supply_response_30m, 4),
+        "avg_estimated_cost_sgd": round(avg_estimated_cost_sgd, 4),
+        "expected_roi": round(expected_roi, 4),
         "confidence_band": confidence_band(n),
     }
 
@@ -135,6 +167,10 @@ def effectiveness_for_context(
     root_cause: str,
     intervention_window: str,
     adjacent_risk_flag: bool,
+    action_id: str | None = None,
+    pricing_level: str | None = None,
+    incentive_level: str | None = None,
+    push_level: str | None = None,
     records: list[dict] | None = None,
 ) -> dict:
     """
@@ -144,6 +180,37 @@ def effectiveness_for_context(
     records = records if records is not None else load_outcome_records()
 
     filters = [
+        (
+            {
+                "action_id": action_id,
+                "risk_level": risk_level,
+                "root_cause": root_cause,
+                "intervention_window": intervention_window,
+                "adjacent_risk_flag": adjacent_risk_flag,
+            },
+            "exact action variant and context",
+        ),
+        (
+            {
+                "action_id": action_id,
+                "risk_level": risk_level,
+                "root_cause": root_cause,
+            },
+            "same action variant, risk, and cause",
+        ),
+        (
+            {
+                "action_id": action_id,
+                "risk_level": risk_level,
+            },
+            "same action variant and risk level",
+        ),
+        (
+            {
+                "action_id": action_id,
+            },
+            "all historical uses of this exact action variant",
+        ),
         (
             {
                 "action_type": action_type,
@@ -203,6 +270,7 @@ def effectiveness_for_context(
     evidence_count = stats["followed_resolved"] or stats["resolved"]
     stats.update({
         "action_type": action_type,
+        "action_id": action_id or action_type,
         "evidence_count": evidence_count,
         "policy_rank_reason": (
             f"Based on {chosen_reason}; {evidence_count} resolved examples, "
@@ -210,6 +278,14 @@ def effectiveness_for_context(
             if chosen_records else
             "No resolved outcomes for this action yet; using rule-based default."
         ),
+        "driver_response_reason": (
+            f"Expected supply response based on {chosen_reason}."
+            if chosen_records else
+            "No historical supply response yet; using catalog prior."
+        ),
+        "pricing_level": pricing_level or "none",
+        "incentive_level": incentive_level or "none",
+        "push_level": push_level or "none",
     })
     return stats
 

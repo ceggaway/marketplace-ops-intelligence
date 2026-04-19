@@ -59,20 +59,32 @@ def log_recommendations(recs_df: pd.DataFrame) -> None:
             )
             record = {
                 "recommendation_id": str(row.get("recommendation_id", "")),
+                "action_id":     str(row.get("action_id", action_type)),
                 "zone_id":       int(row.get("zone_id", 0)),
                 "zone_name":     str(row.get("zone_name", "")),
                 "action_type":   action_type,
+                "pricing_level": str(row.get("pricing_level", "none")),
+                "incentive_level": str(row.get("incentive_level", "none")),
+                "push_level":    str(row.get("push_level", "none")),
                 "priority":      str(row.get("priority", "low")),
                 "score_at_time": round(float(row.get("delay_risk_score", 0)), 4),
+                "supply_at_time": int(row.get("taxi_count", 0) or 0),
                 "risk_level":    str(row.get("risk_level", "low")),
                 "root_cause":    str(row.get("root_cause", "unknown")),
                 "intervention_window": str(row.get("intervention_window", "unknown")),
                 "eta_bucket":    eta_bucket(row.get("eta_minutes")),
                 "adjacent_risk_flag": bool(str(row.get("adjacent_risk_zones", "")).strip()),
                 "alternative_actions": str(row.get("alternative_actions", "")),
+                "estimated_cost_sgd": _float_or_none(row.get("estimated_cost_sgd")),
+                "expected_supply_response_30m": _float_or_none(row.get("expected_supply_response_30m")),
+                "expected_recovery_probability": _float_or_none(row.get("expected_recovery_probability")),
                 "expected_recovery_rate": _float_or_none(row.get("expected_recovery_rate")),
                 "expected_improvement_rate": _float_or_none(row.get("expected_improvement_rate")),
                 "estimated_score_delta": _float_or_none(row.get("estimated_score_delta")),
+                "expected_roi": _float_or_none(row.get("expected_roi")),
+                "decision_objective": str(row.get("decision_objective", "reliability_first")),
+                "winning_reason": str(row.get("winning_reason", "")),
+                "constraints_triggered": str(row.get("constraints_triggered", "")),
                 "confidence_band": str(row.get("confidence_band", "low")),
                 "evidence_count": int(_float_or_none(row.get("evidence_count")) or 0),
                 "follow_rate": _float_or_none(row.get("follow_rate")),
@@ -81,6 +93,8 @@ def log_recommendations(recs_df: pd.DataFrame) -> None:
                 "check_after":   check_t,
                 "outcome":       None,
                 "score_after":   None,
+                "supply_after_30m": None,
+                "supply_delta_30m": None,
                 "followed_status": None,
                 "followed_at":   None,
                 "followed_by":   None,
@@ -111,9 +125,12 @@ def check_and_update_outcomes(current_preds_df: pd.DataFrame) -> list[dict]:
 
     # Build zone_id → current score map
     score_map: dict[int, float] = {}
+    supply_map: dict[int, int] = {}
     if "zone_id" in current_preds_df.columns and "delay_risk_score" in current_preds_df.columns:
         for _, r in current_preds_df.iterrows():
             score_map[int(r["zone_id"])] = float(r["delay_risk_score"])
+            if "taxi_count" in current_preds_df.columns:
+                supply_map[int(r["zone_id"])] = int(r.get("taxi_count", 0) or 0)
 
     raw = OUTCOME_LOG.read_text().strip().splitlines()
     updated: list[dict] = []
@@ -159,6 +176,9 @@ def check_and_update_outcomes(current_preds_df: pd.DataFrame) -> list[dict]:
 
         rec["outcome"]     = outcome
         rec["score_after"] = round(score_now, 4)
+        if zone_id in supply_map:
+            rec["supply_after_30m"] = supply_map[zone_id]
+            rec["supply_delta_30m"] = int(supply_map[zone_id] - int(rec.get("supply_at_time", 0) or 0))
         updated.append(rec)
         resolved.append(rec)
 

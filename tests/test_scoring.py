@@ -161,9 +161,10 @@ def test_high_risk_fast_depletion_triggers_action():
         taxi_count=15,
         explanation_tag="rapid depletion + low supply",
     ), {}, {})
-    # Fast depletion branch: should mention incentive or escalation
+    # Fast depletion branch: optimizer should choose an active intervention,
+    # not monitor / no-action.
     rec_lower = rec["recommendation"].lower()
-    assert "incentive" in rec_lower or "escalat" in rec_lower or "notification" in rec_lower
+    assert "surge" in rec_lower or "incentive" in rec_lower or "escalat" in rec_lower or "notification" in rec_lower
 
 
 def test_recommendation_has_required_keys():
@@ -175,7 +176,11 @@ def test_recommendation_has_required_keys():
                 "recommendation_id", "action_type", "expected_recovery_rate",
                 "expected_improvement_rate", "estimated_score_delta",
                 "confidence_band", "evidence_count", "follow_rate",
-                "policy_rank_reason"]
+                "policy_rank_reason", "estimated_cost_sgd",
+                "expected_supply_response_30m", "expected_recovery_probability",
+                "expected_roi", "decision_objective", "winning_reason",
+                "constraints_triggered", "action_id", "pricing_level",
+                "incentive_level", "push_level"]
     for key in required:
         assert key in rec
 
@@ -192,3 +197,86 @@ def test_recommendation_policy_defaults_when_no_history():
     assert rec["confidence_band"] == "low"
     assert rec["evidence_count"] == 0
     assert "rule-based default" in rec["policy_rank_reason"].lower()
+
+
+def test_optimizer_prefers_best_historical_action_over_rule_default():
+    policy_records = [
+        {
+            "action_id": "mild_surge",
+            "action_type": "surge_pricing",
+            "risk_level": "high",
+            "root_cause": "demand_spike",
+            "intervention_window": "ample",
+            "adjacent_risk_flag": False,
+            "followed_status": "followed",
+            "outcome": "recovered",
+            "score_at_time": 0.82,
+            "score_after": 0.45,
+            "supply_delta_30m": 4,
+            "estimated_cost_sgd": 1.0,
+        },
+        {
+            "action_id": "mild_surge",
+            "action_type": "surge_pricing",
+            "risk_level": "high",
+            "root_cause": "demand_spike",
+            "intervention_window": "ample",
+            "adjacent_risk_flag": False,
+            "followed_status": "followed",
+            "outcome": "improved",
+            "score_at_time": 0.81,
+            "score_after": 0.58,
+            "supply_delta_30m": 3,
+            "estimated_cost_sgd": 1.0,
+        },
+        {
+            "action_id": "strong_driver_incentive",
+            "action_type": "driver_incentive",
+            "risk_level": "high",
+            "root_cause": "demand_spike",
+            "intervention_window": "ample",
+            "adjacent_risk_flag": False,
+            "followed_status": "followed",
+            "outcome": "worsened",
+            "score_at_time": 0.82,
+            "score_after": 0.9,
+            "supply_delta_30m": 0,
+            "estimated_cost_sgd": 2.5,
+        },
+    ]
+    rec = _build_recommendation(_rec_row(
+        delay_risk_score=0.82,
+        risk_level="high",
+        depletion_rate_1h=0.35,
+        taxi_count=18,
+        supply_vs_yesterday=0.92,
+        explanation_tag="rapid depletion",
+    ), {}, {}, policy_records=policy_records)
+    assert rec["action_id"] == "mild_surge"
+    assert rec["expected_roi"] > 0
+
+
+def test_too_late_window_forces_escalation():
+    rec = _build_recommendation(_rec_row(
+        delay_risk_score=0.9,
+        risk_level="high",
+        depletion_rate_1h=0.9,
+        taxi_count=4,
+        explanation_tag="rapid depletion + low supply",
+    ), {}, {}, policy_records=[])
+    assert rec["action_id"] == "escalation"
+    assert "too_late" in rec["constraints_triggered"] or rec["priority"] == "critical"
+
+
+def test_network_guardrail_blocks_push_actions():
+    risk_map = {3: "high"}
+    rec = _build_recommendation(_rec_row(
+        zone_id=1,
+        delay_risk_score=0.78,
+        risk_level="high",
+        depletion_rate_1h=0.32,
+        taxi_count=16,
+        explanation_tag="rapid depletion",
+    ), risk_map, {}, policy_records=[])
+    assert "adjacent" in rec["network_warning"].lower()
+    assert rec["action_id"] not in {"push_only", "surge_plus_push"}

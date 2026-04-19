@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from backend.recommendations.action_catalog import candidate_actions_for_risk
+from backend.recommendations.decision_optimizer import score_candidate_action
 from backend.recommendations.policy_effectiveness import (
     action_type_from_recommendation,
     effectiveness_for_context,
@@ -234,40 +236,132 @@ def _recommendation_id(zone_id: int, timestamp: str, action_type: str, risk_leve
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
-def _enrich_alternatives_with_policy(
-    alternatives: list[dict],
-    risk_level: str,
-    root_cause: str,
-    window: str,
-    has_adj_risk: bool,
-    records: list[dict],
-) -> list[dict]:
-    enriched: list[dict] = []
-    for alt in alternatives:
-        action_type = action_type_from_recommendation(risk_level, str(alt.get("action", "")))
-        stats = effectiveness_for_context(
-            action_type=action_type,
-            risk_level=risk_level,
-            root_cause=root_cause,
-            intervention_window=window,
-            adjacent_risk_flag=has_adj_risk,
-            records=records,
-        )
-        alt = alt.copy()
-        alt["expected_improvement_rate"] = stats["improvement_rate"]
-        alt["confidence_band"] = stats["confidence_band"]
-        alt["evidence_count"] = stats["evidence_count"]
-        alt["policy_rank_reason"] = stats["policy_rank_reason"]
-        enriched.append(alt)
+def _constraints_for_action(action: dict, context: dict) -> tuple[bool, list[str]]:
+    constraints: list[str] = []
+    window = context["intervention_window"]
+    risk_level = context["risk_level"]
+    has_adj_risk = context["adjacent_risk_flag"]
+    is_raining = context["is_raining"]
+    lag_min = int(action.get("lag_min", 0))
+    eta = context.get("eta_minutes")
 
-    return sorted(
-        enriched,
-        key=lambda alt: (
-            not bool(alt.get("viable")),
-            -float(alt.get("expected_improvement_rate", 0.0)),
-            -int(alt.get("evidence_count", 0)),
-        ),
+    if risk_level == "high" and window == "too_late":
+        if action["action_id"] != "escalation":
+            constraints.append("too_late_for_automated_action")
+
+    if eta is not None and lag_min and eta < lag_min and action["action_id"] != "escalation":
+        constraints.append("time_to_effect_exceeds_eta")
+
+    if has_adj_risk and action.get("push_level") != "none":
+        constraints.append("adjacent_risk_network_guardrail")
+
+    if risk_level == "medium" and action.get("pricing_level") == "strong":
+        constraints.append("surge_cap_for_medium_risk")
+
+    if is_raining and risk_level == "high" and action["action_id"] in {"push_only", "monitor", "none"}:
+        constraints.append("weather_requires_pricing_or_incentive")
+
+    viable = len(constraints) == 0
+    return viable, constraints
+
+
+def _format_action_recommendation(action: dict, context: dict) -> tuple[str, str]:
+    zone_name = context["zone_name"]
+    root_cause = context["root_cause"].replace("_", " ")
+    rider_message = " Show rider notice about elevated fares and possible delays." if action.get("rider_message") else ""
+    action_id = action["action_id"]
+
+    if action_id == "none":
+        return (
+            "No action required immediately. Continue standard monitoring cadence.",
+            "No intervention cost; maintain baseline reliability watch.",
+        )
+    if action_id == "monitor":
+        return (
+            "Hold action for now. Reassess this zone in 15 minutes and trigger intervention if the score worsens.",
+            "Low-cost watchlist posture while preserving intervention budget.",
+        )
+    if action_id == "mild_surge":
+        return (
+            f"Activate mild surge pricing (+$0.50 to $1.00) in {zone_name}. Use rider messaging to smooth demand." + rider_message,
+            "Fast demand relief with moderate rider impact.",
+        )
+    if action_id == "strong_surge":
+        return (
+            f"Activate strong surge pricing (+$1.50 to $2.50) in {zone_name}. Keep it tightly time-boxed and reassess within 10 minutes." + rider_message,
+            "Strongest near-term demand suppression and driver pull signal.",
+        )
+    if action_id == "mild_driver_incentive":
+        return (
+            f"Offer a mild driver incentive (+$1.00 bonus) for the next hour in {zone_name}. Target nearby idle drivers.",
+            "Supply-side support with lower rider impact.",
+        )
+    if action_id == "strong_driver_incentive":
+        return (
+            f"Offer a strong driver incentive (+$2.00 bonus) for the next hour in {zone_name}. Prioritize drivers with recent service history in this zone.",
+            "Higher-cost supply recovery aimed at acute shortages.",
+        )
+    if action_id == "push_only":
+        return (
+            f"Send a targeted push notification to idle drivers within 3 km of {zone_name}. Emphasize expected earnings and rapid pickup demand.",
+            "Low-cost repositioning nudge when nearby slack exists.",
+        )
+    if action_id == "surge_plus_incentive":
+        return (
+            f"Activate mild surge pricing and a +$1.50 driver incentive in {zone_name}. This combines demand shaping with supply activation for {root_cause} conditions." + rider_message,
+            "Balanced marketplace response using both price and incentive levers.",
+        )
+    if action_id == "surge_plus_push":
+        return (
+            f"Activate mild surge pricing and send a targeted push to nearby drivers for {zone_name}. Use this when fast demand shaping is needed but full incentives are not yet justified." + rider_message,
+            "Hybrid action with quick demand relief and light supply repositioning.",
+        )
+    return (
+        f"Escalate {zone_name} to district ops immediately. Authorize manual intervention and maximum marketplace controls.",
+        "Human override for shortages that may outrun automated levers.",
     )
+
+
+def _build_candidates(
+    risk_level: str,
+    context: dict,
+    policy_records: list[dict] | None,
+) -> list[dict]:
+    candidates = []
+    for action in candidate_actions_for_risk(risk_level):
+        viable, constraints = _constraints_for_action(action, context)
+        recommendation, impact = _format_action_recommendation(action, context)
+        scored = score_candidate_action(action, context, records=policy_records)
+        scored.update({
+            "viable": viable,
+            "constraints_triggered": constraints,
+            "recommendation": recommendation,
+            "expected_impact": impact,
+        })
+        candidates.append(scored)
+    return candidates
+
+
+def _candidate_priority(action_id: str, risk_level: str) -> str:
+    if action_id == "escalation":
+        return "critical"
+    if risk_level == "high" and action_id in {"strong_surge", "strong_driver_incentive", "surge_plus_incentive", "surge_plus_push"}:
+        return "high"
+    if risk_level == "high":
+        return "high"
+    if risk_level == "medium":
+        return "medium"
+    return "low"
+
+
+def _confidence_from_candidate(candidate: dict, score: float) -> float:
+    base = {
+        "high": 0.92,
+        "medium": 0.8,
+        "low": 0.68,
+    }.get(candidate.get("confidence_band", "low"), 0.68)
+    confidence = min(0.99, max(0.25, base + min(score, 1.0) * 0.08))
+    return round(confidence, 2)
 
 
 # ── Main builder ──────────────────────────────────────────────────────────────
@@ -308,6 +402,8 @@ def _build_recommendation(
     # Time dynamics
     eta    = _eta_minutes(depletion, taxi_count, zone_critical)
     window = _intervention_window(eta)
+    if eta is None and risk_level == "high" and taxi_count <= zone_critical:
+        window = "too_late"
 
     # Root cause
     root_cause = _classify_root_cause(expl_tag, depletion, vs_yest, vs_baseline)
@@ -324,172 +420,67 @@ def _build_recommendation(
 
     eta_str = f"~{eta} min" if eta is not None else "unknown"
 
-    # ── HIGH RISK ─────────────────────────────────────────────────────────────
     if risk_level == "high":
-
         if window == "too_late":
-            # ETA < escalation lag — automated levers cannot work
-            issue          = f"CRITICAL: supply exhaustion imminent ({eta_str}). Automated levers cannot act in time."
-            recommendation = (
-                f"Escalate immediately to district ops manager — shortage likely within {eta_str}. "
-                f"Human override required. Simultaneously activate maximum surge (+$3.00) "
-                f"to suppress remaining demand and signal all nearby drivers."
-            )
-            impact         = "Surge suppresses demand immediately; ops override is the only viable supply-side response"
-            confidence     = round(min(score + 0.05, 0.99), 2)
-            priority       = "critical"
-
+            issue = f"CRITICAL: supply exhaustion imminent ({eta_str}). Automated levers cannot act in time."
         elif is_raining:
-            issue          = "High shortage risk driven by rainfall — demand surge absorbing supply network-wide"
-            recommendation = (
-                "Activate rain surge pricing (+$2.00/trip) across this zone. "
-                "Push driver incentive notification to idle drivers within 3 km. "
-                "Alert riders in-app to expect higher fares and longer wait times."
-                + (f" Note: {network_warn}" if has_adj_risk else "")
-            )
-            impact         = "Rain surge reduces demand 15–20% immediately and attracts 10–15 nearby drivers within 20 min"
-            confidence     = round(min(score + 0.10, 0.99), 2)
-            priority       = "critical"
-
+            issue = "High shortage risk driven by rainfall — marketplace imbalance requires fast demand and supply control."
         elif is_critically_low:
             pct_of_normal = f"{int((taxi_count / baseline_mean) * 100)}%" if baseline_mean else f"{taxi_count} taxis"
-            issue          = (
-                f"Critical supply: {taxi_count} taxis ({pct_of_normal} of zone baseline) — "
-                f"shortage imminent{f' in {eta_str}' if eta else ''}"
-            )
-            recommendation = (
-                f"Escalate to district ops manager. "
-                f"Activate $2.00 driver incentive for pickups in {zone_name}. "
-                f"Push targeted notification to all idle drivers within 5 km. "
-                f"Enable in-app demand nudge: suggest nearby pickup zones to waiting riders."
-                + (f" ⚠ Network: {network_warn}" if has_adj_risk else "")
-            )
-            impact         = "Escalation + max incentive expected to mobilise 5–10 drivers within 15 min"
-            confidence     = round(score, 2)
-            priority       = "critical"
-
-        elif is_fast_depleting and window == "tight":
-            # Fast depletion, not much time — pricing is the only viable lever
-            issue          = (
-                f"Rapid depletion at {depletion*100:.0f}%/hr — "
-                f"estimated critical shortage in {eta_str}. "
-                f"Push notification lag ({LAG_PUSH} min) exceeds available window."
-            )
-            recommendation = (
-                f"Activate surge pricing (+$1.50/trip) immediately — demand-side effect in {LAG_PRICING_DEMAND} min. "
-                f"Push notification viable only if ETA extends past {LAG_PUSH} min. "
-                f"Set 10-min reassessment alert."
-                + (f" ⚠ {network_warn}" if has_adj_risk else "")
-            )
-            impact         = f"Pricing suppresses demand within {LAG_PRICING_DEMAND} min; shortage averted if depletion slows"
-            confidence     = round(score * 0.95, 2)
-            priority       = "critical"
-
+            issue = f"Critical supply: {taxi_count} taxis ({pct_of_normal} of zone baseline) — shortage imminent{f' in {eta_str}' if eta else ''}"
         elif is_fast_depleting:
-            # Fast depletion, window is ample — use both levers
-            issue          = (
-                f"Rapid depletion at {depletion*100:.0f}%/hr — "
-                f"estimated critical shortage in {eta_str}"
-            )
-            push_note = (
-                f" ⚠ Adjacent zones at risk ({adj_risk_str}) — "
-                f"push may stress neighbours; prefer pricing as primary lever."
-                if has_adj_risk else
-                " Push notification to idle drivers in adjacent low-risk zones."
-            )
-            recommendation = (
-                f"Activate zone driver incentive (+$1.50/trip for next hour)."
-                + push_note +
-                f" Escalate to ops if depletion rate does not slow within 15 min."
-            )
-            impact         = f"Incentive + push expected to stabilise supply within 20–30 min (ETA: {eta_str})"
-            confidence     = round(score * 0.95, 2)
-            priority       = "critical"
-
+            issue = f"Rapid depletion at {depletion*100:.0f}%/hr — estimated critical shortage in {eta_str}"
         elif is_structural_gap and root_cause == "structural_gap":
-            # Supply well below DOW baseline — structural issue, not a live spike
             gap_pct = round((1 - (vs_baseline or vs_yest)) * 100)
-            issue   = (
-                f"Supply {gap_pct}% below typical level for this zone/time. "
-                f"Root cause: {root_cause.replace('_', ' ')}. "
-                f"Demand spike alone is unlikely — investigate access or driver availability."
-            )
-            recommendation = (
-                f"Activate driver incentive (+$1.00/trip). "
-                f"Check for road closures, events, or app issues affecting {zone_name}. "
-                f"Push targeted re-engagement notification to drivers who served this zone "
-                f"at this time last {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][__import__('datetime').datetime.now().weekday()]}."
-            )
-            impact         = "Incentive + targeted driver re-engagement expected to close supply gap within 30–45 min"
-            confidence     = round(score * 0.90, 2)
-            priority       = "high"
-
+            issue = f"Supply {gap_pct}% below typical level for this zone/time — structural gap detected"
         else:
-            # High risk, no dominant acute signal
-            issue          = (
-                f"Elevated shortage risk (score {score:.3f}). "
-                f"Root cause: {root_cause.replace('_', ' ')}."
-            )
-            recommendation = (
-                "Apply mild fare adjustment (+$0.50 surge) to dampen demand. "
-                "Send availability push notification to idle drivers within 3 km. "
-                "Reassess in 15 min — escalate if score remains above 0.70."
-                + (f" ⚠ {network_warn}" if has_adj_risk else "")
-            )
-            impact         = f"Mild pricing + driver nudge expected to stabilise supply within 20 min"
-            confidence     = round(score * 0.85, 2)
-            priority       = "high"
-
-    # ── MEDIUM RISK ───────────────────────────────────────────────────────────
+            issue = f"Elevated shortage risk (score {score:.3f}) with root cause: {root_cause.replace('_', ' ')}."
     elif risk_level == "medium":
-
         if is_fast_depleting:
-            issue          = (
-                f"Moderate risk but depleting at {depletion*100:.0f}%/hr — "
-                f"may cross high-risk threshold"
-                + (f" in {eta_str}" if eta else "")
-            )
-            recommendation = (
-                "Send proactive push notification to 5–10 nearby idle drivers now — no pricing action yet. "
-                "Reassess in 15 min. Activate surge immediately if score exceeds 0.70."
-                + (f" ⚠ {network_warn}" if has_adj_risk else "")
-            )
-            impact         = "Early driver nudge can prevent escalation without pricing intervention"
-            confidence     = round(score, 2)
-            priority       = "medium"
-
+            issue = f"Moderate risk but depleting at {depletion*100:.0f}%/hr — may cross high-risk threshold{f' in {eta_str}' if eta else ''}"
         elif is_structural_gap:
             gap_pct = round((1 - (vs_baseline or vs_yest)) * 100)
-            issue          = f"Moderate risk with supply {gap_pct}% below typical level — structural gap forming"
-            recommendation = (
-                "Monitor closely over next 30 min. "
-                "If supply continues to fall, activate driver incentive before risk reaches high threshold. "
-                "No immediate pricing action required."
-            )
-            impact         = "Early monitoring avoids reactive-only response if conditions worsen"
-            confidence     = round(score, 2)
-            priority       = "medium"
-
+            issue = f"Moderate risk with supply {gap_pct}% below typical level — structural gap forming"
         else:
-            issue          = f"Moderate shortage risk — conditions elevated but stable (score {score:.3f})"
-            recommendation = (
-                "No immediate action. Reassess in 30 min. "
-                "Flag for early incentive activation if score rises above 0.65."
-            )
-            impact         = "Watchlist — intervene at first sign of acceleration"
-            confidence     = round(score, 2)
-            priority       = "medium"
-
-    # ── LOW RISK ──────────────────────────────────────────────────────────────
+            issue = f"Moderate shortage risk — conditions elevated but stable (score {score:.3f})"
     else:
-        issue          = "Normal operating conditions — supply and demand balanced"
-        recommendation = "No action required. Continue standard 5-min monitoring cadence."
-        impact         = "N/A"
-        confidence     = round(1 - score, 2)
-        priority       = "low"
+        issue = "Normal operating conditions — supply and demand balanced"
 
-    # ── Alternatives ──────────────────────────────────────────────────────────
-    action_type = action_type_from_recommendation(priority, recommendation)
+    context = {
+        "zone_id": zone_id,
+        "zone_name": zone_name,
+        "risk_level": risk_level,
+        "root_cause": root_cause,
+        "intervention_window": window,
+        "adjacent_risk_flag": has_adj_risk,
+        "is_raining": is_raining,
+        "is_critically_low": is_critically_low,
+        "is_fast_depleting": is_fast_depleting,
+        "is_structural_gap": is_structural_gap,
+        "eta_minutes": eta,
+        "delay_risk_score": score,
+    }
+
+    candidates = _build_candidates(risk_level, context, policy_records or [])
+    viable_candidates = [c for c in candidates if c.get("viable")]
+    chosen = (
+        sorted(
+            viable_candidates,
+            key=lambda c: (
+                -float(c.get("expected_net_value", 0.0)),
+                -float(c.get("expected_recovery_probability", 0.0)),
+                -float(c.get("expected_supply_response_30m", 0.0)),
+            ),
+        )[0]
+        if viable_candidates else
+        sorted(candidates, key=lambda c: -float(c.get("expected_net_value", 0.0)))[0]
+    )
+
+    recommendation = chosen["recommendation"]
+    impact = chosen["expected_impact"]
+    priority = _candidate_priority(chosen["action_id"], risk_level)
+    confidence = _confidence_from_candidate(chosen, score)
+    action_type = str(chosen.get("action_type", action_type_from_recommendation(priority, recommendation)))
     recommendation_id = _recommendation_id(zone_id, snapshot_ts, action_type, risk_level)
     policy_stats = effectiveness_for_context(
         action_type=action_type,
@@ -497,16 +488,42 @@ def _build_recommendation(
         root_cause=root_cause,
         intervention_window=window,
         adjacent_risk_flag=has_adj_risk,
+        action_id=str(chosen.get("action_id", action_type)),
+        pricing_level=str(chosen.get("pricing_level", "none")),
+        incentive_level=str(chosen.get("incentive_level", "none")),
+        push_level=str(chosen.get("push_level", "none")),
         records=policy_records,
     )
-    alternatives = _enrich_alternatives_with_policy(
-        _build_alternatives(risk_level, root_cause, window, adj_at_risk, score),
-        risk_level=risk_level,
-        root_cause=root_cause,
-        window=window,
-        has_adj_risk=has_adj_risk,
-        records=policy_records or [],
-    )
+
+    alternatives = []
+    for candidate in sorted(
+        candidates,
+        key=lambda c: (
+            not bool(c.get("viable")),
+            -float(c.get("expected_net_value", 0.0)),
+        ),
+    ):
+        alt = {
+            "action": candidate["title"],
+            "action_id": candidate["action_id"],
+            "time_to_effect_min": candidate["lag_min"],
+            "cost": "none" if float(candidate.get("estimated_cost_sgd", 0.0)) == 0 else ("low" if float(candidate.get("estimated_cost_sgd", 0.0)) <= 1.5 else "medium"),
+            "impact": candidate["expected_impact"],
+            "viable": candidate["viable"],
+            "estimated_cost_sgd": round(float(candidate.get("estimated_cost_sgd", 0.0)), 2),
+            "expected_supply_response_30m": round(float(candidate.get("expected_supply_response_30m", 0.0)), 2),
+            "expected_recovery_probability": round(float(candidate.get("expected_recovery_probability", 0.0)), 4),
+            "expected_improvement_rate": round(float(candidate.get("expected_improvement_probability", 0.0)), 4),
+            "expected_score_delta": round(float(candidate.get("expected_score_delta", 0.0)), 4),
+            "expected_roi": round(float(candidate.get("expected_roi", 0.0)), 4),
+            "confidence_band": candidate.get("confidence_band"),
+            "evidence_count": candidate.get("evidence_count"),
+            "policy_rank_reason": candidate.get("policy_rank_reason"),
+            "constraints_triggered": candidate.get("constraints_triggered", []),
+            "winning_reason": candidate.get("winning_reason", ""),
+        }
+        if candidate["action_id"] != chosen["action_id"]:
+            alternatives.append(alt)
 
     return {
         "recommendation_id":      recommendation_id,
@@ -530,14 +547,27 @@ def _build_recommendation(
         "network_warning":       network_warn,
         # Gap 3/5: root cause + alternatives
         "root_cause":            root_cause,
+        "action_id":             chosen["action_id"],
         "action_type":           action_type,
+        "pricing_level":         chosen.get("pricing_level", "none"),
+        "incentive_level":       chosen.get("incentive_level", "none"),
+        "push_level":            chosen.get("push_level", "none"),
         "expected_recovery_rate": policy_stats["recovery_rate"],
-        "expected_improvement_rate": policy_stats["improvement_rate"],
-        "estimated_score_delta": policy_stats["estimated_score_delta"],
-        "confidence_band":       policy_stats["confidence_band"],
-        "evidence_count":        policy_stats["evidence_count"],
-        "follow_rate":           policy_stats["follow_rate"],
-        "policy_rank_reason":    policy_stats["policy_rank_reason"],
+        "expected_improvement_rate": chosen["expected_improvement_probability"],
+        "estimated_score_delta": chosen["expected_score_delta"],
+        "confidence_band":       chosen["confidence_band"],
+        "evidence_count":        chosen["evidence_count"],
+        "follow_rate":           chosen["follow_rate"],
+        "policy_rank_reason":    chosen["policy_rank_reason"],
+        "estimated_cost_sgd":    chosen["estimated_cost_sgd"],
+        "expected_supply_response_30m": chosen["expected_supply_response_30m"],
+        "expected_recovery_probability": chosen["expected_recovery_probability"],
+        "expected_roi":          chosen["expected_roi"],
+        "decision_objective":    "reliability_first",
+        "winning_reason":        (
+            f"Selected {chosen['title']} because it maximized expected reliability value under current constraints."
+        ),
+        "constraints_triggered": json.dumps(chosen.get("constraints_triggered", [])),
         "alternative_actions":   json.dumps(alternatives),
     }
 

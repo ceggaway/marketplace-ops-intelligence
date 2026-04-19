@@ -190,8 +190,10 @@ function ActionRow({
             : (rec.expected_impact || 'Expected supply improvement')}
         </div>
         <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.40)', marginTop: 3 }}>
-          Score {rec.delay_risk_score.toFixed(3)}
-          {rec.evidence_count != null ? ` · ${rec.evidence_count} cases` : ''}
+          {rec.estimated_cost_sgd != null
+            ? `S$${rec.estimated_cost_sgd.toFixed(2)} cost`
+            : `Score ${rec.delay_risk_score.toFixed(3)}`}
+          {rec.expected_roi != null ? ` · ROI ${rec.expected_roi.toFixed(2)}` : ''}
         </div>
       </div>
 
@@ -270,16 +272,16 @@ function DetailPanel({
       {/* Expected impact */}
       <div>
         <div style={{ ...SECTION_LABEL, marginBottom: 10 }}>Expected Impact</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
           <div style={{
             background: 'rgba(16,217,138,0.08)', border: '1px solid rgba(16,217,138,0.20)',
             borderRadius: 10, padding: '10px 12px',
           }}>
             <div style={{ fontSize: '1.35rem', fontWeight: 700, color: COLORS.low, lineHeight: 1 }}>
-              {rec.expected_impact?.match(/\d+[-–]\d+%/)?.[0] ?? '10-15%'}
+              {rec.expected_recovery_probability != null ? `${Math.round(rec.expected_recovery_probability * 100)}%` : (rec.expected_impact?.match(/\d+[-–]\d+%/)?.[0] ?? '10-15%')}
             </div>
             <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
-              Supply Improvement
+              Recover Probability
             </div>
           </div>
           <div style={{
@@ -291,6 +293,28 @@ function DetailPanel({
             </div>
             <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
               Action Priority
+            </div>
+          </div>
+          <div style={{
+            background: 'rgba(255,193,7,0.08)', border: '1px solid rgba(255,193,7,0.20)',
+            borderRadius: 10, padding: '10px 12px',
+          }}>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#ffc107', lineHeight: 1 }}>
+              {rec.estimated_cost_sgd != null ? `S$${rec.estimated_cost_sgd.toFixed(2)}` : '—'}
+            </div>
+            <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
+              Estimated Cost
+            </div>
+          </div>
+          <div style={{
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 10, padding: '10px 12px',
+          }}>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'rgba(255,255,255,0.90)', lineHeight: 1 }}>
+              {rec.expected_supply_response_30m != null ? `+${rec.expected_supply_response_30m.toFixed(1)}` : '—'}
+            </div>
+            <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
+              Supply Response 30m
             </div>
           </div>
         </div>
@@ -327,6 +351,12 @@ function DetailPanel({
             {rec.policy_rank_reason ?? 'Rule engine default retained; not enough resolved outcomes yet.'}
             {rec.follow_rate != null ? ` Follow-through rate: ${Math.round(rec.follow_rate * 100)}%.` : ''}
           </div>
+          {(rec.expected_roi != null || rec.winning_reason) && (
+            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.62)', lineHeight: 1.5, marginTop: 8 }}>
+              {rec.expected_roi != null ? `Expected ROI: ${rec.expected_roi.toFixed(2)}. ` : ''}
+              {rec.winning_reason ?? ''}
+            </div>
+          )}
         </div>
       )}
 
@@ -371,6 +401,12 @@ function DetailPanel({
         <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.82)', lineHeight: 1.5 }}>
           {rec.recommendation}
         </div>
+        {(rec.decision_objective || rec.constraints_triggered) && (
+          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)', marginTop: 8, lineHeight: 1.5 }}>
+            Objective: {rec.decision_objective ?? 'reliability_first'}
+            {rec.constraints_triggered ? ` · Constraints: ${rec.constraints_triggered}` : ''}
+          </div>
+        )}
       </div>
 
       {/* Engine v2: diagnostics row */}
@@ -437,12 +473,18 @@ function DetailPanel({
                         {alt.expected_improvement_rate != null ? `Hist. improve ${Math.round(alt.expected_improvement_rate * 100)}%` : 'No learned signal'}
                         {alt.evidence_count != null ? ` · ${alt.evidence_count} cases` : ''}
                         {alt.confidence_band ? ` · ${alt.confidence_band} conf.` : ''}
+                        {alt.expected_roi != null ? ` · ROI ${alt.expected_roi.toFixed(2)}` : ''}
                       </div>
                     )}
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)' }}>+{alt.time_to_effect_min}m</div>
                     <div style={{ fontSize: '0.60rem', color: alt.cost === 'none' ? COLORS.low : alt.cost === 'low' ? COLORS.medium : COLORS.high, textTransform: 'capitalize', fontWeight: 600 }}>{alt.cost} cost</div>
+                    {alt.estimated_cost_sgd != null && (
+                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.34)', marginTop: 3 }}>
+                        S${alt.estimated_cost_sgd.toFixed(2)}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

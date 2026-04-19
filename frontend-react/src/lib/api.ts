@@ -42,14 +42,22 @@ export interface ZoneDetail extends Zone {
 
 export interface AlternativeAction {
   action: string
+  action_id?: string | null
   time_to_effect_min: number
   cost: string
   impact: string
   viable: boolean
+  estimated_cost_sgd?: number | null
+  expected_supply_response_30m?: number | null
+  expected_recovery_probability?: number | null
   expected_improvement_rate?: number | null
+  expected_score_delta?: number | null
+  expected_roi?: number | null
   confidence_band?: string | null
   evidence_count?: number | null
   policy_rank_reason?: string | null
+  constraints_triggered?: string[] | null
+  winning_reason?: string | null
 }
 
 export interface Recommendation {
@@ -67,7 +75,11 @@ export interface Recommendation {
   adjacent_risk_zones?: string | null;
   network_warning?: string | null;
   root_cause?: string | null;
+  action_id?: string | null;
   action_type?: string | null;
+  pricing_level?: string | null;
+  incentive_level?: string | null;
+  push_level?: string | null;
   expected_recovery_rate?: number | null;
   expected_improvement_rate?: number | null;
   estimated_score_delta?: number | null;
@@ -75,6 +87,13 @@ export interface Recommendation {
   evidence_count?: number | null;
   follow_rate?: number | null;
   policy_rank_reason?: string | null;
+  estimated_cost_sgd?: number | null;
+  expected_supply_response_30m?: number | null;
+  expected_recovery_probability?: number | null;
+  expected_roi?: number | null;
+  decision_objective?: string | null;
+  winning_reason?: string | null;
+  constraints_triggered?: string | null;
   alternative_actions?: string | null;
 }
 
