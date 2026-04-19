@@ -415,6 +415,28 @@ def test_reports_model_impact_handles_sparse_registry(tmp_path):
     assert body["version_lineage"][0]["trained_at"] == ""
 
 
+def test_reports_model_impact_hides_stale_candidates(tmp_path):
+    drift_file = tmp_path / "drift_report.json"
+    drift_file.write_text(json.dumps({"psi": 0.02}))
+    sample_registry = {
+        "active_version": "v1",
+        "candidate_version": "v_candidate_live",
+        "versions": {
+            "v1": {"status": "active", "trained_at": "2024-01-03T00:00:00+00:00", "promoted_at": "2024-01-03T01:00:00+00:00", "metrics": {"f1": 0.92, "roc_auc": 0.95}},
+            "v_candidate_live": {"status": "candidate", "trained_at": "2024-01-04T00:00:00+00:00", "promoted_at": None, "metrics": {"precision": 0.5, "recall": 0.6, "f1": 0.54, "roc_auc": 0.84}},
+            "v_candidate_stale": {"status": "candidate", "trained_at": "2024-01-01T00:00:00+00:00", "promoted_at": None, "metrics": {"precision": 0.0, "recall": 0.0, "f1": 0.0, "roc_auc": None}},
+        },
+    }
+    with patch("backend.api.routers.reports.OUT_DIR", tmp_path), \
+         patch("backend.api.routers.reports.registry.get_active_version_meta", return_value=_SAMPLE_META), \
+         patch("backend.api.routers.reports.registry._load_registry", return_value=sample_registry):
+        resp = client.get("/api/v1/reports/model-impact")
+    assert resp.status_code == 200
+    versions = [row["version"] for row in resp.json()["version_lineage"]]
+    assert "v_candidate_live" in versions
+    assert "v_candidate_stale" not in versions
+
+
 def test_reports_zone_performance_caps_window_to_retention(tmp_path):
     now_iso = datetime.now(timezone.utc).isoformat()
     history_file = tmp_path / "zone_scores_history.jsonl"
@@ -471,6 +493,39 @@ def test_model_versions_200():
         resp = client.get("/api/v1/model/versions")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+def test_model_versions_hides_stale_candidates():
+    sample_registry = {
+        "active_version": "v1",
+        "candidate_version": "v_candidate_live",
+        "versions": {
+            "v1": {
+                "status": "active",
+                "trained_at": "2024-01-03T00:00:00+00:00",
+                "promoted_at": "2024-01-03T01:00:00+00:00",
+                "metrics": {"f1": 0.9, "roc_auc": 0.95},
+            },
+            "v_candidate_live": {
+                "status": "candidate",
+                "trained_at": "2024-01-04T00:00:00+00:00",
+                "promoted_at": None,
+                "metrics": {"precision": 0.5, "recall": 0.6, "f1": 0.54, "roc_auc": 0.84},
+            },
+            "v_candidate_stale": {
+                "status": "candidate",
+                "trained_at": "2024-01-01T00:00:00+00:00",
+                "promoted_at": None,
+                "metrics": {"precision": 0.0, "recall": 0.0, "f1": 0.0, "roc_auc": None},
+            },
+        },
+    }
+    with patch("backend.registry.model_registry._load_registry", return_value=sample_registry):
+        resp = client.get("/api/v1/model/versions")
+    assert resp.status_code == 200
+    ids = [row["version_id"] for row in resp.json()]
+    assert "v_candidate_live" in ids
+    assert "v_candidate_stale" not in ids
 
 
 # ── /pipeline/latest-run ──────────────────────────────────────────────────────

@@ -446,9 +446,10 @@ def get_model_impact():
     active_ver = _label(meta.get("version_id"), "") or None
 
     # Version lineage
-    reg_data = _safe_dict(registry._load_registry())
     lineage  = []
-    for vid, vmeta in _safe_dict(reg_data.get("versions")).items():
+    for version_entry in registry.list_versions():
+        vid = version_entry.get("version_id")
+        vmeta = _safe_dict(version_entry)
         vmeta = _safe_dict(vmeta)
         m = _safe_dict(vmeta.get("metrics"))
         lineage.append({

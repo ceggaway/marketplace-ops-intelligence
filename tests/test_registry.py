@@ -11,7 +11,8 @@ Covers:
 - promote() raises KeyError for unknown version
 - rollback() reverts to previous stable version
 - rollback() raises RuntimeError when no previous version exists
-- list_versions() returns all versions sorted descending
+- list_versions() returns the useful lineage by default
+- cleanup_registry() prunes stale candidates and excess previous versions
 """
 
 import json
@@ -212,3 +213,53 @@ def test_list_versions_empty_when_registry_empty(tmp_path):
     with p1, p2, p3:
         versions = registry.list_versions()
     assert versions == []
+
+
+def test_list_versions_hides_stale_candidates_by_default(tmp_path):
+    _make_version(tmp_path, "v1")
+    _make_version(tmp_path, "v_good_candidate", metrics={"precision": 0.4, "recall": 0.6, "f1": 0.48, "roc_auc": 0.8})
+    _make_version(tmp_path, "v_zero_candidate", metrics={"precision": 0.0, "recall": 0.0, "f1": 0.0, "roc_auc": None})
+    reg_data = {
+        "active_version": "v1",
+        "candidate_version": "v_good_candidate",
+        "versions": {
+            "v1": {"status": "active", "trained_at": "2024-01-03T00:00:00+00:00", "promoted_at": "2024-01-03T01:00:00+00:00", "metrics": {"f1": 0.77}},
+            "v_good_candidate": {"status": "candidate", "trained_at": "2024-01-04T00:00:00+00:00", "promoted_at": None, "metrics": {"precision": 0.4, "recall": 0.6, "f1": 0.48, "roc_auc": 0.8}},
+            "v_zero_candidate": {"status": "candidate", "trained_at": "2024-01-01T00:00:00+00:00", "promoted_at": None, "metrics": {"precision": 0.0, "recall": 0.0, "f1": 0.0, "roc_auc": None}},
+        },
+    }
+    (tmp_path / "registry.json").write_text(json.dumps(reg_data))
+    p1, p2, p3 = _patch_registry(tmp_path)
+    with p1, p2, p3:
+        versions = registry.list_versions()
+        all_versions = registry.list_versions(include_stale=True)
+    ids = [v["version_id"] for v in versions]
+    assert "v_good_candidate" in ids
+    assert "v_zero_candidate" not in ids
+    assert "v_zero_candidate" in [v["version_id"] for v in all_versions]
+
+
+def test_cleanup_registry_prunes_stale_candidates_and_old_previous(tmp_path):
+    for vid in ["v_active", "v_prev_1", "v_prev_2", "v_prev_3", "v_candidate", "v_stale"]:
+        _make_version(tmp_path, vid)
+    reg_data = {
+        "active_version": "v_active",
+        "candidate_version": "v_candidate",
+        "versions": {
+            "v_active": {"status": "active", "trained_at": "2024-01-06T00:00:00+00:00", "promoted_at": "2024-01-06T01:00:00+00:00", "metrics": {"f1": 0.8}},
+            "v_prev_1": {"status": "previous", "trained_at": "2024-01-05T00:00:00+00:00", "promoted_at": "2024-01-05T01:00:00+00:00", "metrics": {"f1": 0.78}},
+            "v_prev_2": {"status": "previous", "trained_at": "2024-01-04T00:00:00+00:00", "promoted_at": "2024-01-04T01:00:00+00:00", "metrics": {"f1": 0.75}},
+            "v_prev_3": {"status": "previous", "trained_at": "2024-01-03T00:00:00+00:00", "promoted_at": "2024-01-03T01:00:00+00:00", "metrics": {"f1": 0.71}},
+            "v_candidate": {"status": "candidate", "trained_at": "2024-01-07T00:00:00+00:00", "promoted_at": None, "metrics": {"precision": 0.5, "recall": 0.4, "f1": 0.44, "roc_auc": 0.77}},
+            "v_stale": {"status": "candidate", "trained_at": "2024-01-02T00:00:00+00:00", "promoted_at": None, "metrics": {"precision": 0.0, "recall": 0.0, "f1": 0.0, "roc_auc": None}},
+        },
+    }
+    (tmp_path / "registry.json").write_text(json.dumps(reg_data))
+    p1, p2, p3 = _patch_registry(tmp_path)
+    with p1, p2, p3:
+        summary = registry.cleanup_registry()
+        cleaned = registry._load_registry()
+    assert set(summary["removed_versions"]) == {"v_stale", "v_prev_3"}
+    assert "v_candidate" in cleaned["versions"]
+    assert "v_stale" not in cleaned["versions"]
+    assert "v_prev_3" not in cleaned["versions"]

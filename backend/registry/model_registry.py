@@ -29,6 +29,90 @@ from pathlib import Path
 REGISTRY_DIR  = Path("data/registry")
 REGISTRY_FILE = REGISTRY_DIR / "registry.json"
 MODELS_DIR    = REGISTRY_DIR / "models"
+MAX_PREVIOUS_VERSIONS = 2
+
+
+def _parse_iso(value: str | None) -> datetime:
+    if not value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _version_sort_key(version_id: str, info: dict) -> tuple[datetime, str]:
+    return (
+        max(
+            _parse_iso(info.get("promoted_at")),
+            _parse_iso(info.get("trained_at")),
+        ),
+        version_id,
+    )
+
+
+def _metrics_are_zeroish(metrics: dict) -> bool:
+    values = [metrics.get(k) for k in ("precision", "recall", "f1")]
+    normalised = []
+    for value in values:
+        try:
+            normalised.append(float(value))
+        except Exception:
+            normalised.append(0.0)
+    roc_auc = metrics.get("roc_auc")
+    return all(v <= 0.0 for v in normalised) and roc_auc in (None, 0, 0.0)
+
+
+def _stale_candidate_ids(reg: dict) -> set[str]:
+    candidate_version = reg.get("candidate_version")
+    stale: set[str] = set()
+    for vid, info in reg.get("versions", {}).items():
+        if vid == candidate_version:
+            continue
+        if info.get("status") != "candidate":
+            continue
+        metrics = info.get("metrics") or {}
+        if _metrics_are_zeroish(metrics):
+            stale.add(vid)
+    return stale
+
+
+def cleanup_registry(max_previous_versions: int = MAX_PREVIOUS_VERSIONS) -> dict:
+    """
+    Prune stale registry entries while keeping the active model, the current
+    candidate under evaluation, and a short lineage of recent previous models.
+    Returns a summary of what was removed.
+    """
+    reg = _load_registry()
+    versions = reg.get("versions", {})
+    removed: list[str] = []
+
+    stale_candidates = _stale_candidate_ids(reg)
+    for vid in stale_candidates:
+        versions.pop(vid, None)
+        removed.append(vid)
+
+    previous_ids = [
+        vid for vid, info in versions.items()
+        if info.get("status") == "previous"
+    ]
+    previous_ids.sort(key=lambda vid: _version_sort_key(vid, versions[vid]), reverse=True)
+    for vid in previous_ids[max_previous_versions:]:
+        versions.pop(vid, None)
+        removed.append(vid)
+
+    if reg.get("candidate_version") and reg["candidate_version"] not in versions:
+        reg["candidate_version"] = None
+    if reg.get("active_version") and reg["active_version"] not in versions:
+        reg["active_version"] = None
+
+    if removed:
+        _save_registry(reg)
+
+    return {"removed_versions": removed}
 
 
 def _load_registry() -> dict:
@@ -79,6 +163,7 @@ def register(version_id: str) -> None:
     }
     reg["candidate_version"] = version_id
     _save_registry(reg)
+    cleanup_registry()
 
 
 def get_active_model():
@@ -153,6 +238,7 @@ def promote(version_id: str) -> None:
             json.dump(meta, f, indent=2)
 
     _save_registry(reg)
+    cleanup_registry()
 
 
 def rollback() -> str:
@@ -180,11 +266,26 @@ def rollback() -> str:
     return previous
 
 
-def list_versions() -> list[dict]:
-    """Return all version metadata sorted by version id descending."""
+def list_versions(include_stale: bool = False, max_previous_versions: int = MAX_PREVIOUS_VERSIONS) -> list[dict]:
+    """Return version metadata sorted by recency and filtered for useful lineage."""
     reg = _load_registry()
+    stale_candidates = _stale_candidate_ids(reg) if not include_stale else set()
+    previous_kept: set[str] = set()
+    if not include_stale:
+        previous_ids = [
+            vid for vid, info in reg.get("versions", {}).items()
+            if info.get("status") == "previous"
+        ]
+        previous_ids.sort(key=lambda vid: _version_sort_key(vid, reg["versions"][vid]), reverse=True)
+        previous_kept = set(previous_ids[:max_previous_versions])
+
     result = []
     for vid, info in reg.get("versions", {}).items():
+        status = info.get("status")
+        if vid in stale_candidates:
+            continue
+        if not include_stale and status == "previous" and vid not in previous_kept:
+            continue
         entry = {"version_id": vid, **info}
         result.append(entry)
-    return sorted(result, key=lambda x: x["version_id"], reverse=True)
+    return sorted(result, key=lambda x: _version_sort_key(x["version_id"], x), reverse=True)
