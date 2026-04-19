@@ -314,6 +314,35 @@ def test_reports_outcomes_includes_learning_breakdown():
     assert "top_contexts" in body
 
 
+def test_reports_outcomes_normalizes_nullable_legacy_fields():
+    sample_records = [
+        {
+            "recommendation_id": "rec-legacy",
+            "zone_id": 1,
+            "zone_name": None,
+            "action_type": None,
+            "priority": None,
+            "risk_level": None,
+            "root_cause": None,
+            "intervention_window": None,
+            "score_at_time": 0.8,
+            "score_after": 0.6,
+            "outcome": "improved",
+            "logged_at": "2024-01-01T08:00:00+00:00",
+            "followed_status": None,
+        }
+    ]
+    with patch("backend.api.routers.reports.load_outcome_records", return_value=sample_records):
+        resp = client.get("/api/v1/reports/outcomes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["recent_outcomes"][0]["action_type"] == "unknown"
+    assert body["recent_outcomes"][0]["priority"] == "unknown"
+    assert body["recent_outcomes"][0]["followed_status"] == "unknown"
+    assert body["top_contexts"][0]["root_cause"] == "unknown"
+    assert body["top_contexts"][0]["intervention_window"] == "unknown"
+
+
 def test_reports_model_impact_reads_flat_registry_metrics(tmp_path):
     drift_file = tmp_path / "drift_report.json"
     drift_file.write_text(json.dumps({"psi": 0.05}))

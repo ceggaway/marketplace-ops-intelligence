@@ -38,6 +38,12 @@ const CARD: React.CSSProperties = {
 const TABS = ['Zone Performance', 'Intervention Outcomes', 'Model Impact'] as const
 type TabId = typeof TABS[number]
 
+function labelText(value: unknown, fallback = 'unknown') {
+  if (value === null || value === undefined) return fallback
+  const text = String(value).trim()
+  return text || fallback
+}
+
 // ── Risk badge ────────────────────────────────────────────────────────────────
 
 function TrendBadge({ trend }: { trend: string }) {
@@ -298,7 +304,7 @@ function OutcomesTab() {
               ) : Object.entries(data.by_action_type).map(([action, stats]) => (
                 <div key={action} style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: '0.76rem', fontWeight: 500, color: 'rgba(255,255,255,0.72)', textTransform: 'capitalize' }}>{action.replace(/_/g, ' ')}</span>
+                    <span style={{ fontSize: '0.76rem', fontWeight: 500, color: 'rgba(255,255,255,0.72)', textTransform: 'capitalize' }}>{labelText(action).replace(/_/g, ' ')}</span>
                     <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.38)' }}>{stats.total} interventions</span>
                   </div>
                   <RateBar value={stats.recovery_rate as number} color={COLORS.low} label="Recovery rate" />
@@ -338,7 +344,7 @@ function OutcomesTab() {
               {Object.entries(data.by_follow_status).map(([status, stats]) => (
                 <div key={status} style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.72)', textTransform: 'capitalize' }}>{status.replace(/_/g, ' ')}</span>
+                    <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.72)', textTransform: 'capitalize' }}>{labelText(status).replace(/_/g, ' ')}</span>
                     <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.38)' }}>{stats.total ?? 0} logged</span>
                   </div>
                   <RateBar value={(stats.improvement_rate as number) ?? 0} color={COLORS.primary} label="Improve / recover" />
@@ -354,12 +360,12 @@ function OutcomesTab() {
               {data.top_contexts.length === 0 ? (
                 <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem', padding: '24px 0' }}>No resolved context buckets yet.</div>
               ) : data.top_contexts.map((ctx, i) => (
-                <div key={`${ctx.action_type}-${ctx.root_cause}-${i}`} style={{ padding: '8px 0', borderBottom: i < data.top_contexts.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                <div key={`${labelText(ctx.action_type)}-${labelText(ctx.root_cause)}-${i}`} style={{ padding: '8px 0', borderBottom: i < data.top_contexts.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
                   <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.82)', fontWeight: 500, textTransform: 'capitalize' }}>
-                    {ctx.action_type.replace(/_/g, ' ')} · {ctx.root_cause.replace(/_/g, ' ')}
+                    {labelText(ctx.action_type).replace(/_/g, ' ')} · {labelText(ctx.root_cause).replace(/_/g, ' ')}
                   </div>
                   <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.36)', marginTop: 3 }}>
-                    {ctx.risk_level} risk · {ctx.intervention_window.replace(/_/g, ' ')} · {ctx.resolved} resolved · {ctx.confidence_band} confidence
+                    {labelText(ctx.risk_level)} risk · {labelText(ctx.intervention_window).replace(/_/g, ' ')} · {ctx.resolved} resolved · {labelText(ctx.confidence_band, 'low')} confidence
                   </div>
                   <div style={{ fontSize: '0.66rem', color: COLORS.primary, marginTop: 5 }}>
                     Improve / recover {pct(ctx.improvement_rate)} · recovery {pct(ctx.recovery_rate)}
@@ -387,20 +393,20 @@ function OutcomesTab() {
                       const ocColor = o.outcome === 'recovered' ? COLORS.low : o.outcome === 'improved' ? COLORS.primary : o.outcome === 'worsened' ? COLORS.high : 'rgba(255,255,255,0.45)'
                       return (
                         <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                          <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.80)', fontWeight: 500 }}>{o.zone_name || `Zone ${o.zone_id}`}</td>
-                          <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>{(o.action_type || '').replace(/_/g, ' ')}</td>
+                          <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.80)', fontWeight: 500 }}>{labelText(o.zone_name, `Zone ${o.zone_id}`)}</td>
+                          <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>{labelText(o.action_type).replace(/_/g, ' ')}</td>
                           <td style={{ padding: '8px 10px' }}>
-                            <span style={{ fontSize: '0.62rem', fontWeight: 600, textTransform: 'uppercase', color: o.priority === 'critical' ? COLORS.high : o.priority === 'high' ? COLORS.medium : 'rgba(255,255,255,0.45)' }}>{o.priority}</span>
+                            <span style={{ fontSize: '0.62rem', fontWeight: 600, textTransform: 'uppercase', color: o.priority === 'critical' ? COLORS.high : o.priority === 'high' ? COLORS.medium : 'rgba(255,255,255,0.45)' }}>{labelText(o.priority)}</span>
                           </td>
                           <td style={{ padding: '8px 10px', color: o.followed_status === 'followed' ? COLORS.low : o.followed_status === 'not_followed' ? COLORS.medium : 'rgba(255,255,255,0.32)', textTransform: 'capitalize' }}>
-                            {o.followed_status ? o.followed_status.replace(/_/g, ' ') : 'unknown'}
+                            {labelText(o.followed_status).replace(/_/g, ' ')}
                           </td>
                           <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.55)', textAlign: 'right' }}>{(o.score_at_time * 100).toFixed(1)}%</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', color: o.score_after !== null && o.score_after !== undefined && o.score_after < o.score_at_time ? COLORS.low : COLORS.high }}>
                             {o.score_after !== null && o.score_after !== undefined ? `${(o.score_after * 100).toFixed(1)}%` : '—'}
                           </td>
                           <td style={{ padding: '8px 10px' }}>
-                            <span style={{ fontSize: '0.65rem', fontWeight: 600, color: ocColor, textTransform: 'capitalize' }}>{o.outcome}</span>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 600, color: ocColor, textTransform: 'capitalize' }}>{labelText(o.outcome)}</span>
                           </td>
                           <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.32)', whiteSpace: 'nowrap' }}>
                             {o.logged_at ? new Date(o.logged_at).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}

@@ -33,6 +33,13 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _label(value, default: str = "unknown") -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text if text else default
+
+
 def _psi_level(psi: float) -> str:
     if psi >= 0.25: return "significant"
     if psi >= 0.10: return "moderate"
@@ -289,10 +296,10 @@ def get_outcome_report():
     context_groups: dict[tuple, list[dict]] = {}
     for r in resolved:
         key = (
-            r.get("action_type", "unknown"),
-            r.get("risk_level", "unknown"),
-            r.get("root_cause", "unknown"),
-            r.get("intervention_window", "unknown"),
+            _label(r.get("action_type")),
+            _label(r.get("risk_level")),
+            _label(r.get("root_cause")),
+            _label(r.get("intervention_window")),
         )
         context_groups.setdefault(key, []).append(r)
     top_contexts = sorted([
@@ -317,14 +324,14 @@ def get_outcome_report():
         {
             "recommendation_id": r.get("recommendation_id"),
             "zone_id":      r["zone_id"],
-            "zone_name":    r.get("zone_name", ""),
-            "action_type":  r.get("action_type", ""),
-            "priority":     r.get("priority", ""),
+            "zone_name":    _label(r.get("zone_name"), str(r["zone_id"])),
+            "action_type":  _label(r.get("action_type")),
+            "priority":     _label(r.get("priority")),
             "score_at_time": r.get("score_at_time", 0.0),
             "score_after":  r.get("score_after"),
-            "outcome":      r.get("outcome", ""),
+            "outcome":      _label(r.get("outcome")),
             "logged_at":    r.get("logged_at", ""),
-            "followed_status": r.get("followed_status"),
+            "followed_status": _label(r.get("followed_status"), "unknown"),
             "follow_note":  r.get("follow_note"),
         }
         for r in sorted(resolved, key=lambda x: x.get("logged_at", ""), reverse=True)[:20]
