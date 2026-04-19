@@ -40,6 +40,46 @@ def _label(value, default: str = "unknown") -> str:
     return text if text else default
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        parsed = float(value)
+        if pd.isna(parsed):
+            return default
+        return parsed
+    except Exception:
+        return default
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        parsed = int(float(value))
+        return parsed
+    except Exception:
+        return default
+
+
+def _safe_iso(value) -> str:
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        return ""
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).isoformat()
+    except Exception:
+        return ""
+
+
+def _safe_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
 def _psi_level(psi: float) -> str:
     if psi >= 0.25: return "significant"
     if psi >= 0.10: return "moderate"
@@ -128,8 +168,11 @@ def get_zone_performance(days: int = 7):
         try:
             r = json.loads(line)
             ts = r.get("timestamp", "")
-            for zone_id_str, score in r.get("zones", {}).items():
-                records.append({"timestamp": ts, "zone_id": int(zone_id_str), "score": float(score)})
+            for zone_id_str, score in _safe_dict(r.get("zones")).items():
+                zone_id = _safe_int(zone_id_str, -1)
+                if zone_id < 0:
+                    continue
+                records.append({"timestamp": ts, "zone_id": zone_id, "score": _safe_float(score)})
         except Exception:
             continue
 
@@ -155,12 +198,19 @@ def get_zone_performance(days: int = 7):
     zone_meta: dict[int, dict] = {}
     pred_path = OUT_DIR / "predictions.csv"
     if pred_path.exists():
-        pred_df = pd.read_csv(pred_path)
-        for _, r in pred_df.drop_duplicates("zone_id").iterrows():
-            zone_meta[int(r["zone_id"])] = {
-                "zone_name": str(r.get("zone_name", str(r["zone_id"]))),
-                "region":    str(r.get("region", "")),
-            }
+        try:
+            pred_df = pd.read_csv(pred_path)
+            if "zone_id" in pred_df.columns:
+                for _, r in pred_df.drop_duplicates("zone_id").iterrows():
+                    zone_id = _safe_int(r.get("zone_id"), -1)
+                    if zone_id < 0:
+                        continue
+                    zone_meta[zone_id] = {
+                        "zone_name": _label(r.get("zone_name"), str(zone_id)),
+                        "region":    _label(r.get("region"), ""),
+                    }
+        except Exception:
+            pass
 
     # Compute per-zone stats using mid-point split for trend
     half = pd.Timedelta(days=days / 2)
@@ -259,7 +309,7 @@ def get_outcome_report():
 
     outcome_counts: dict[str, int] = {}
     for r in resolved:
-        oc = r.get("outcome", "unknown")
+        oc = _label(r.get("outcome"))
         outcome_counts[oc] = outcome_counts.get(oc, 0) + 1
 
     recovery_rate    = round(outcome_counts.get("recovered", 0) / total_resolved, 4)
@@ -273,14 +323,19 @@ def get_outcome_report():
         "not_followed": summarise_action_outcomes([r for r in all_records if r.get("followed_status") == "not_followed"]),
         "unknown": summarise_action_outcomes([r for r in all_records if r.get("followed_status") not in ("followed", "not_followed")]),
     }
+    by_action = {str(k): v for k, v in _safe_dict(by_action).items()}
+    by_follow_status = {str(k): v for k, v in _safe_dict(by_follow_status).items()}
 
     # By zone — top 10 most intervened
     by_zone_counts: dict[tuple, dict] = {}
     for r in resolved:
-        key = (r["zone_id"], r.get("zone_name", str(r["zone_id"])))
+        zone_id = _safe_int(r.get("zone_id"), -1)
+        if zone_id < 0:
+            continue
+        key = (zone_id, _label(r.get("zone_name"), str(zone_id)))
         by_zone_counts.setdefault(key, {"total": 0, "recovered": 0})
         by_zone_counts[key]["total"] += 1
-        if r.get("outcome") == "recovered":
+        if _label(r.get("outcome")) == "recovered":
             by_zone_counts[key]["recovered"] += 1
 
     by_zone = sorted([
@@ -323,18 +378,18 @@ def get_outcome_report():
     recent = [
         {
             "recommendation_id": r.get("recommendation_id"),
-            "zone_id":      r["zone_id"],
-            "zone_name":    _label(r.get("zone_name"), str(r["zone_id"])),
+            "zone_id":      _safe_int(r.get("zone_id")),
+            "zone_name":    _label(r.get("zone_name"), str(_safe_int(r.get("zone_id")))),
             "action_type":  _label(r.get("action_type")),
             "priority":     _label(r.get("priority")),
-            "score_at_time": r.get("score_at_time", 0.0),
-            "score_after":  r.get("score_after"),
+            "score_at_time": _safe_float(r.get("score_at_time")),
+            "score_after":  None if r.get("score_after") is None else _safe_float(r.get("score_after")),
             "outcome":      _label(r.get("outcome")),
-            "logged_at":    r.get("logged_at", ""),
+            "logged_at":    _safe_iso(r.get("logged_at")),
             "followed_status": _label(r.get("followed_status"), "unknown"),
-            "follow_note":  r.get("follow_note"),
+            "follow_note":  None if r.get("follow_note") is None else str(r.get("follow_note")),
         }
-        for r in sorted(resolved, key=lambda x: x.get("logged_at", ""), reverse=True)[:20]
+        for r in sorted(resolved, key=lambda x: _safe_iso(x.get("logged_at")), reverse=True)[:20]
     ]
 
     credibility = ""
@@ -383,24 +438,25 @@ def get_model_impact():
             pass
 
     # Model metrics from registry
-    meta      = registry.get_active_version_meta() or {}
-    precision = meta.get("precision")
-    recall    = meta.get("recall")
-    f1        = meta.get("f1")
-    trained_at = meta.get("trained_at")
-    active_ver = meta.get("version_id")
+    meta       = _safe_dict(registry.get_active_version_meta() or {})
+    precision  = _safe_float(meta.get("precision"), None)
+    recall     = _safe_float(meta.get("recall"), None)
+    f1         = _safe_float(meta.get("f1"), None)
+    trained_at = _safe_iso(meta.get("trained_at"))
+    active_ver = _label(meta.get("version_id"), "") or None
 
     # Version lineage
-    reg_data = registry._load_registry()
+    reg_data = _safe_dict(registry._load_registry())
     lineage  = []
-    for vid, vmeta in reg_data.get("versions", {}).items():
-        m = vmeta.get("metrics", {})
+    for vid, vmeta in _safe_dict(reg_data.get("versions")).items():
+        vmeta = _safe_dict(vmeta)
+        m = _safe_dict(vmeta.get("metrics"))
         lineage.append({
-            "version":    vid,
-            "status":     vmeta.get("status", ""),
-            "trained_at": vmeta.get("trained_at", ""),
-            "f1":         m.get("f1"),
-            "roc_auc":    m.get("roc_auc"),
+            "version":    _label(vid, "unknown"),
+            "status":     _label(vmeta.get("status"), "unknown"),
+            "trained_at": _safe_iso(vmeta.get("trained_at")),
+            "f1":         _safe_float(m.get("f1"), None),
+            "roc_auc":    _safe_float(m.get("roc_auc"), None),
         })
     lineage.sort(key=lambda x: x.get("trained_at", ""), reverse=True)
 

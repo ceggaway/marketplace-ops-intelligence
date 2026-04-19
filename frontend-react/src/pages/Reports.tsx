@@ -44,6 +44,39 @@ function labelText(value: unknown, fallback = 'unknown') {
   return text || fallback
 }
 
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : []
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function asNumber(value: unknown, fallback = 0) {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function safePct(value: unknown) {
+  return pct(asNumber(value))
+}
+
+function safeDateTime(value: unknown) {
+  if (value === null || value === undefined || value === '') return '—'
+  const d = new Date(String(value))
+  return Number.isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+function safeDate(value: unknown) {
+  if (value === null || value === undefined || value === '') return '—'
+  const d = new Date(String(value))
+  return Number.isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 // ── Risk badge ────────────────────────────────────────────────────────────────
 
 function TrendBadge({ trend }: { trend: string }) {
@@ -80,6 +113,15 @@ function ScoreBar({ value, color }: { value: number; color: string }) {
 // ── Zone Performance Tab ──────────────────────────────────────────────────────
 
 function ZoneCard({ entry, rank }: { entry: ZonePerformanceEntry; rank?: number }) {
+  const zoneName = labelText(entry?.zone_name, 'Unknown zone')
+  const region = labelText(entry?.region, '')
+  const observations = asNumber(entry?.observations)
+  const pctHigh = asNumber(entry?.pct_time_high)
+  const pctMedium = asNumber(entry?.pct_time_medium)
+  const pctLow = asNumber(entry?.pct_time_low)
+  const meanScore = asNumber(entry?.mean_score)
+  const trend = labelText(entry?.trend, 'stable')
+  const trendDelta = asNumber(entry?.trend_delta)
   return (
     <div style={{ ...GLASS, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
@@ -88,39 +130,39 @@ function ZoneCard({ entry, rank }: { entry: ZonePerformanceEntry; rank?: number 
             {rank !== undefined && (
               <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'rgba(255,255,255,0.32)', width: 18 }}>#{rank}</span>
             )}
-            <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'rgba(255,255,255,0.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{entry.zone_name}</span>
+            <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'rgba(255,255,255,0.88)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{zoneName}</span>
           </div>
-          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: 2, paddingLeft: rank !== undefined ? 24 : 0 }}>{entry.region} · {entry.observations} obs</div>
+          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', marginTop: 2, paddingLeft: rank !== undefined ? 24 : 0 }}>{region} · {observations} obs</div>
         </div>
-        <TrendBadge trend={entry.trend} />
+        <TrendBadge trend={trend} />
       </div>
 
       {/* Score bars */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.38)', width: 42, flexShrink: 0 }}>High</span>
-          <ScoreBar value={entry.pct_time_high} color={COLORS.high} />
+          <ScoreBar value={pctHigh} color={COLORS.high} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.38)', width: 42, flexShrink: 0 }}>Medium</span>
-          <ScoreBar value={entry.pct_time_medium} color={COLORS.medium} />
+          <ScoreBar value={pctMedium} color={COLORS.medium} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.38)', width: 42, flexShrink: 0 }}>Low</span>
-          <ScoreBar value={entry.pct_time_low} color={COLORS.low} />
+          <ScoreBar value={pctLow} color={COLORS.low} />
         </div>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <div>
           <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.32)' }}>Mean score</div>
-          <div style={{ fontSize: '0.80rem', fontWeight: 600, color: 'rgba(255,255,255,0.78)' }}>{(entry.mean_score * 100).toFixed(1)}%</div>
+          <div style={{ fontSize: '0.80rem', fontWeight: 600, color: 'rgba(255,255,255,0.78)' }}>{(meanScore * 100).toFixed(1)}%</div>
         </div>
-        {entry.trend !== 'stable' && (
+        {trend !== 'stable' && (
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.32)' }}>Δ recent vs prior</div>
-            <div style={{ fontSize: '0.80rem', fontWeight: 600, color: entry.trend_delta > 0 ? COLORS.high : COLORS.low }}>
-              {entry.trend_delta > 0 ? '+' : ''}{(entry.trend_delta * 100).toFixed(1)}pp
+            <div style={{ fontSize: '0.80rem', fontWeight: 600, color: trendDelta > 0 ? COLORS.high : COLORS.low }}>
+              {trendDelta > 0 ? '+' : ''}{(trendDelta * 100).toFixed(1)}pp
             </div>
           </div>
         )}
@@ -137,6 +179,12 @@ function ZonePerformanceTab() {
     queryFn: () => api.reportZonePerformance(days),
     staleTime: 120_000,
   })
+  const report = {
+    note: labelText(data?.note, ''),
+    chronic_high_risk: asArray<ZonePerformanceEntry>(data?.chronic_high_risk),
+    most_improved: asArray<ZonePerformanceEntry>(data?.most_improved),
+    deteriorating: asArray<ZonePerformanceEntry>(data?.deteriorating),
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -176,9 +224,9 @@ function ZonePerformanceTab() {
 
       {data && (
         <>
-          {data.note && (
+          {report.note && (
             <div style={{ ...CARD, padding: '12px 16px', borderColor: 'rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.06)', color: 'rgba(245,158,11,0.88)', fontSize: '0.76rem' }}>
-              {data.note}
+              {report.note}
             </div>
           )}
 
@@ -189,9 +237,9 @@ function ZonePerformanceTab() {
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS.high, boxShadow: `0 0 6px ${COLORS.high}` }} />
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(255,255,255,0.70)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Chronic High-Risk</span>
               </div>
-              {data.chronic_high_risk.length === 0 ? (
+              {report.chronic_high_risk.length === 0 ? (
                 <div style={{ ...GLASS, padding: '28px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem' }}>No chronic zones in this window</div>
-              ) : data.chronic_high_risk.map((e, i) => <ZoneCard key={e.zone_id} entry={e} rank={i + 1} />)}
+              ) : report.chronic_high_risk.map((e, i) => <ZoneCard key={e.zone_id} entry={e} rank={i + 1} />)}
             </div>
 
             {/* Most improved */}
@@ -200,9 +248,9 @@ function ZonePerformanceTab() {
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS.low, boxShadow: `0 0 6px ${COLORS.low}` }} />
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(255,255,255,0.70)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Most Improved</span>
               </div>
-              {data.most_improved.length === 0 ? (
+              {report.most_improved.length === 0 ? (
                 <div style={{ ...GLASS, padding: '28px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem' }}>No improving zones in this window</div>
-              ) : data.most_improved.map((e, i) => <ZoneCard key={e.zone_id} entry={e} rank={i + 1} />)}
+              ) : report.most_improved.map((e, i) => <ZoneCard key={e.zone_id} entry={e} rank={i + 1} />)}
             </div>
 
             {/* Deteriorating */}
@@ -211,9 +259,9 @@ function ZonePerformanceTab() {
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS.medium, boxShadow: `0 0 6px ${COLORS.medium}` }} />
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(255,255,255,0.70)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Deteriorating</span>
               </div>
-              {data.deteriorating.length === 0 ? (
+              {report.deteriorating.length === 0 ? (
                 <div style={{ ...GLASS, padding: '28px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem' }}>No deteriorating zones in this window</div>
-              ) : data.deteriorating.map((e, i) => <ZoneCard key={e.zone_id} entry={e} rank={i + 1} />)}
+              ) : report.deteriorating.map((e, i) => <ZoneCard key={e.zone_id} entry={e} rank={i + 1} />)}
             </div>
           </div>
         </>
@@ -246,6 +294,18 @@ function OutcomesTab() {
     queryFn: api.reportOutcomes,
     staleTime: 120_000,
   })
+  const report = {
+    total_logged: asNumber(data?.total_logged),
+    total_resolved: asNumber(data?.total_resolved),
+    recovery_rate: asNumber(data?.recovery_rate),
+    improvement_rate: asNumber(data?.improvement_rate),
+    by_action_type: asRecord(data?.by_action_type),
+    by_follow_status: asRecord(data?.by_follow_status),
+    by_zone: asArray<Record<string, unknown>>(data?.by_zone),
+    top_contexts: asArray<Record<string, unknown>>(data?.top_contexts),
+    recent_outcomes: asArray<Record<string, unknown>>(data?.recent_outcomes),
+    sample_size_note: labelText(data?.sample_size_note, ''),
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -273,19 +333,19 @@ function OutcomesTab() {
 
       {data && (
         <>
-          {data.sample_size_note && (
+          {report.sample_size_note && (
             <div style={{ ...CARD, padding: '12px 16px', borderColor: 'rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.06)', color: 'rgba(245,158,11,0.88)', fontSize: '0.76rem' }}>
-              {data.sample_size_note}
+              {report.sample_size_note}
             </div>
           )}
 
           {/* Summary KPI row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
             {[
-              { label: 'Total interventions', value: data.total_logged, note: 'logged', color: COLORS.primary },
-              { label: 'Resolved', value: data.total_resolved, note: 'assessed at 30 min', color: 'rgba(255,255,255,0.65)' },
-              { label: 'Recovery rate', value: pct(data.recovery_rate), note: 'resolved outcomes below high-risk threshold', color: COLORS.low },
-              { label: 'Improvement rate', value: pct(data.improvement_rate), note: 'resolved outcomes improved or recovered', color: COLORS.low },
+              { label: 'Total interventions', value: report.total_logged, note: 'logged', color: COLORS.primary },
+              { label: 'Resolved', value: report.total_resolved, note: 'assessed at 30 min', color: 'rgba(255,255,255,0.65)' },
+              { label: 'Recovery rate', value: safePct(report.recovery_rate), note: 'resolved outcomes below high-risk threshold', color: COLORS.low },
+              { label: 'Improvement rate', value: safePct(report.improvement_rate), note: 'resolved outcomes improved or recovered', color: COLORS.low },
             ].map(k => (
               <div key={k.label} style={{ ...CARD }}>
                 <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.40)', marginBottom: 6 }}>{k.label}</div>
@@ -299,37 +359,39 @@ function OutcomesTab() {
             {/* By action type */}
             <div style={{ ...CARD, display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.70)' }}>Observed outcomes by action type</div>
-              {Object.keys(data.by_action_type).length === 0 ? (
+              {Object.keys(report.by_action_type).length === 0 ? (
                 <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem', padding: '24px 0' }}>No resolved outcomes yet.</div>
-              ) : Object.entries(data.by_action_type).map(([action, stats]) => (
+              ) : Object.entries(report.by_action_type).map(([action, stats]) => {
+                const actionStats = asRecord(stats)
+                return (
                 <div key={action} style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                     <span style={{ fontSize: '0.76rem', fontWeight: 500, color: 'rgba(255,255,255,0.72)', textTransform: 'capitalize' }}>{labelText(action).replace(/_/g, ' ')}</span>
-                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.38)' }}>{stats.total} interventions</span>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.38)' }}>{asNumber(actionStats.total)} interventions</span>
                   </div>
-                  <RateBar value={stats.recovery_rate as number} color={COLORS.low} label="Recovery rate" />
+                  <RateBar value={asNumber(actionStats.recovery_rate)} color={COLORS.low} label="Recovery rate" />
                   <div style={{ marginTop: 6 }}>
-                    <RateBar value={stats.improvement_rate as number} color={COLORS.primary} label="Improvement rate" />
+                    <RateBar value={asNumber(actionStats.improvement_rate)} color={COLORS.primary} label="Improvement rate" />
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
 
             {/* Top zones by intervention count */}
             <div style={{ ...CARD, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.70)' }}>Most intervened zones</div>
-              {data.by_zone.length === 0 ? (
+              {report.by_zone.length === 0 ? (
                 <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem', padding: '24px 0' }}>No data yet.</div>
-              ) : data.by_zone.map((z, i) => (
-                <div key={z.zone_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < data.by_zone.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+              ) : report.by_zone.map((z, i) => (
+                <div key={`${labelText(z.zone_id)}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < report.by_zone.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
                   <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.32)', width: 20, textAlign: 'right' }}>#{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.80)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{z.zone_name}</div>
-                    <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)' }}>{z.interventions} interventions</div>
+                    <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.80)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{labelText(z.zone_name, `Zone ${asNumber(z.zone_id)}`)}</div>
+                    <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)' }}>{asNumber(z.interventions)} interventions</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.76rem', fontWeight: 600, color: z.recovery_rate >= 0.5 ? COLORS.low : z.recovery_rate >= 0.3 ? COLORS.medium : COLORS.high }}>
-                      {pct(z.recovery_rate)}
+                    <div style={{ fontSize: '0.76rem', fontWeight: 600, color: asNumber(z.recovery_rate) >= 0.5 ? COLORS.low : asNumber(z.recovery_rate) >= 0.3 ? COLORS.medium : COLORS.high }}>
+                      {safePct(z.recovery_rate)}
                     </div>
                     <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.30)' }}>recovery</div>
                   </div>
@@ -341,34 +403,36 @@ function OutcomesTab() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
             <div style={{ ...CARD, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.70)' }}>Follow-through split</div>
-              {Object.entries(data.by_follow_status).map(([status, stats]) => (
+              {Object.entries(report.by_follow_status).map(([status, stats]) => {
+                const followStats = asRecord(stats)
+                return (
                 <div key={status} style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                     <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.72)', textTransform: 'capitalize' }}>{labelText(status).replace(/_/g, ' ')}</span>
-                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.38)' }}>{stats.total ?? 0} logged</span>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.38)' }}>{asNumber(followStats.total)} logged</span>
                   </div>
-                  <RateBar value={(stats.improvement_rate as number) ?? 0} color={COLORS.primary} label="Improve / recover" />
+                  <RateBar value={asNumber(followStats.improvement_rate)} color={COLORS.primary} label="Improve / recover" />
                   <div style={{ marginTop: 6 }}>
-                    <RateBar value={(stats.recovery_rate as number) ?? 0} color={COLORS.low} label="Recovery" />
+                    <RateBar value={asNumber(followStats.recovery_rate)} color={COLORS.low} label="Recovery" />
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
 
             <div style={{ ...CARD, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.70)' }}>Strongest context buckets</div>
-              {data.top_contexts.length === 0 ? (
+              {report.top_contexts.length === 0 ? (
                 <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem', padding: '24px 0' }}>No resolved context buckets yet.</div>
-              ) : data.top_contexts.map((ctx, i) => (
-                <div key={`${labelText(ctx.action_type)}-${labelText(ctx.root_cause)}-${i}`} style={{ padding: '8px 0', borderBottom: i < data.top_contexts.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+              ) : report.top_contexts.map((ctx, i) => (
+                <div key={`${labelText(ctx.action_type)}-${labelText(ctx.root_cause)}-${i}`} style={{ padding: '8px 0', borderBottom: i < report.top_contexts.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
                   <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.82)', fontWeight: 500, textTransform: 'capitalize' }}>
                     {labelText(ctx.action_type).replace(/_/g, ' ')} · {labelText(ctx.root_cause).replace(/_/g, ' ')}
                   </div>
                   <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.36)', marginTop: 3 }}>
-                    {labelText(ctx.risk_level)} risk · {labelText(ctx.intervention_window).replace(/_/g, ' ')} · {ctx.resolved} resolved · {labelText(ctx.confidence_band, 'low')} confidence
+                    {labelText(ctx.risk_level)} risk · {labelText(ctx.intervention_window).replace(/_/g, ' ')} · {asNumber(ctx.resolved)} resolved · {labelText(ctx.confidence_band, 'low')} confidence
                   </div>
                   <div style={{ fontSize: '0.66rem', color: COLORS.primary, marginTop: 5 }}>
-                    Improve / recover {pct(ctx.improvement_rate)} · recovery {pct(ctx.recovery_rate)}
+                    Improve / recover {safePct(ctx.improvement_rate)} · recovery {safePct(ctx.recovery_rate)}
                   </div>
                 </div>
               ))}
@@ -376,7 +440,7 @@ function OutcomesTab() {
           </div>
 
           {/* Recent resolved outcomes table */}
-          {data.recent_outcomes.length > 0 && (
+          {report.recent_outcomes.length > 0 && (
             <div style={{ ...CARD }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.70)', marginBottom: 14 }}>Recent resolved outcomes</div>
               <div style={{ overflowX: 'auto' }}>
@@ -389,27 +453,32 @@ function OutcomesTab() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.recent_outcomes.map((o, i) => {
-                      const ocColor = o.outcome === 'recovered' ? COLORS.low : o.outcome === 'improved' ? COLORS.primary : o.outcome === 'worsened' ? COLORS.high : 'rgba(255,255,255,0.45)'
+                    {report.recent_outcomes.map((o, i) => {
+                      const outcome = labelText(o.outcome)
+                      const priority = labelText(o.priority)
+                      const followedStatus = labelText(o.followed_status)
+                      const scoreAtTime = asNumber(o.score_at_time)
+                      const scoreAfter = o.score_after === null || o.score_after === undefined ? null : asNumber(o.score_after)
+                      const ocColor = outcome === 'recovered' ? COLORS.low : outcome === 'improved' ? COLORS.primary : outcome === 'worsened' ? COLORS.high : 'rgba(255,255,255,0.45)'
                       return (
                         <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                          <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.80)', fontWeight: 500 }}>{labelText(o.zone_name, `Zone ${o.zone_id}`)}</td>
+                          <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.80)', fontWeight: 500 }}>{labelText(o.zone_name, `Zone ${asNumber(o.zone_id)}`)}</td>
                           <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>{labelText(o.action_type).replace(/_/g, ' ')}</td>
                           <td style={{ padding: '8px 10px' }}>
-                            <span style={{ fontSize: '0.62rem', fontWeight: 600, textTransform: 'uppercase', color: o.priority === 'critical' ? COLORS.high : o.priority === 'high' ? COLORS.medium : 'rgba(255,255,255,0.45)' }}>{labelText(o.priority)}</span>
+                            <span style={{ fontSize: '0.62rem', fontWeight: 600, textTransform: 'uppercase', color: priority === 'critical' ? COLORS.high : priority === 'high' ? COLORS.medium : 'rgba(255,255,255,0.45)' }}>{priority}</span>
                           </td>
-                          <td style={{ padding: '8px 10px', color: o.followed_status === 'followed' ? COLORS.low : o.followed_status === 'not_followed' ? COLORS.medium : 'rgba(255,255,255,0.32)', textTransform: 'capitalize' }}>
-                            {labelText(o.followed_status).replace(/_/g, ' ')}
+                          <td style={{ padding: '8px 10px', color: followedStatus === 'followed' ? COLORS.low : followedStatus === 'not_followed' ? COLORS.medium : 'rgba(255,255,255,0.32)', textTransform: 'capitalize' }}>
+                            {followedStatus.replace(/_/g, ' ')}
                           </td>
-                          <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.55)', textAlign: 'right' }}>{(o.score_at_time * 100).toFixed(1)}%</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: o.score_after !== null && o.score_after !== undefined && o.score_after < o.score_at_time ? COLORS.low : COLORS.high }}>
-                            {o.score_after !== null && o.score_after !== undefined ? `${(o.score_after * 100).toFixed(1)}%` : '—'}
+                          <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.55)', textAlign: 'right' }}>{(scoreAtTime * 100).toFixed(1)}%</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: scoreAfter !== null && scoreAfter < scoreAtTime ? COLORS.low : COLORS.high }}>
+                            {scoreAfter !== null ? `${(scoreAfter * 100).toFixed(1)}%` : '—'}
                           </td>
                           <td style={{ padding: '8px 10px' }}>
-                            <span style={{ fontSize: '0.65rem', fontWeight: 600, color: ocColor, textTransform: 'capitalize' }}>{labelText(o.outcome)}</span>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 600, color: ocColor, textTransform: 'capitalize' }}>{outcome}</span>
                           </td>
                           <td style={{ padding: '8px 10px', color: 'rgba(255,255,255,0.32)', whiteSpace: 'nowrap' }}>
-                            {o.logged_at ? new Date(o.logged_at).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                            {safeDateTime(o.logged_at)}
                           </td>
                         </tr>
                       )
@@ -471,6 +540,17 @@ function ModelImpactTab() {
     queryFn: api.reportModelImpact,
     staleTime: 120_000,
   })
+  const report = {
+    psi: asNumber(data?.psi),
+    psi_business_impact: labelText(data?.psi_business_impact, 'Model impact data unavailable.'),
+    estimated_false_positive_note: labelText(data?.estimated_false_positive_note, 'Alert accuracy data unavailable.'),
+    recommendation: labelText(data?.recommendation, 'No recommendation available.'),
+    active_version: labelText(data?.active_version, 'None'),
+    f1: data?.f1,
+    precision: data?.precision,
+    recall: data?.recall,
+    version_lineage: asArray<Record<string, unknown>>(data?.version_lineage),
+  }
 
   const handleExportPredictions = () => {
     window.open('/api/v1/reports/export/predictions', '_blank')
@@ -526,28 +606,28 @@ function ModelImpactTab() {
             {/* PSI gauge */}
             <div style={{ ...CARD }}>
               <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.42)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 14 }}>Data Drift</div>
-              <PsiGauge psi={data.psi} />
+              <PsiGauge psi={report.psi} />
             </div>
 
             {/* Business impact text */}
             <div style={{ ...CARD, padding: '16px 20px' }}>
               <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.42)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 10 }}>Business impact</div>
-              <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.72)', lineHeight: 1.6 }}>{data.psi_business_impact}</div>
+              <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.72)', lineHeight: 1.6 }}>{report.psi_business_impact}</div>
             </div>
 
             {/* False positive note */}
             <div style={{ ...CARD, padding: '16px 20px' }}>
               <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.42)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 10 }}>Alert accuracy</div>
-              <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.72)', lineHeight: 1.6 }}>{data.estimated_false_positive_note}</div>
+              <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.72)', lineHeight: 1.6 }}>{report.estimated_false_positive_note}</div>
             </div>
 
             {/* Recommendation */}
-            <div style={{ ...CARD, padding: '16px 20px', borderColor: data.psi >= 0.25 ? `${COLORS.high}30` : data.psi >= 0.10 ? `${COLORS.medium}30` : `${COLORS.low}30`, background: data.psi >= 0.25 ? `${COLORS.high}08` : data.psi >= 0.10 ? `${COLORS.medium}08` : `${COLORS.low}08` }}>
+            <div style={{ ...CARD, padding: '16px 20px', borderColor: report.psi >= 0.25 ? `${COLORS.high}30` : report.psi >= 0.10 ? `${COLORS.medium}30` : `${COLORS.low}30`, background: report.psi >= 0.25 ? `${COLORS.high}08` : report.psi >= 0.10 ? `${COLORS.medium}08` : `${COLORS.low}08` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                {data.psi >= 0.10 ? <AlertTriangle size={13} color={data.psi >= 0.25 ? COLORS.high : COLORS.medium} /> : <CheckCircle2 size={13} color={COLORS.low} />}
-                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: data.psi >= 0.25 ? COLORS.high : data.psi >= 0.10 ? COLORS.medium : COLORS.low, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Recommendation</span>
+                {report.psi >= 0.10 ? <AlertTriangle size={13} color={report.psi >= 0.25 ? COLORS.high : COLORS.medium} /> : <CheckCircle2 size={13} color={COLORS.low} />}
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: report.psi >= 0.25 ? COLORS.high : report.psi >= 0.10 ? COLORS.medium : COLORS.low, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Recommendation</span>
               </div>
-              <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.80)', lineHeight: 1.6 }}>{data.recommendation}</div>
+              <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.80)', lineHeight: 1.6 }}>{report.recommendation}</div>
             </div>
           </div>
 
@@ -557,31 +637,32 @@ function ModelImpactTab() {
             <div style={{ ...CARD }}>
               <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.42)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 4 }}>Active model</div>
               <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.55)', marginBottom: 14 }}>
-                {data.active_version ?? 'None'}</div>
-              <MetricRow label="F1 score" value={data.f1 !== null && data.f1 !== undefined ? data.f1.toFixed(4) : null} note="Harmonic mean of precision + recall" />
-              <MetricRow label="Precision" value={data.precision !== null && data.precision !== undefined ? `${(data.precision * 100).toFixed(1)}%` : null} note="Of alerts fired, % that are genuine shortages" />
-              <MetricRow label="Recall" value={data.recall !== null && data.recall !== undefined ? `${(data.recall * 100).toFixed(1)}%` : null} note="Of genuine shortages, % caught by the model" />
+                {report.active_version}</div>
+              <MetricRow label="F1 score" value={typeof report.f1 === 'number' ? report.f1.toFixed(4) : null} note="Harmonic mean of precision + recall" />
+              <MetricRow label="Precision" value={typeof report.precision === 'number' ? `${(report.precision * 100).toFixed(1)}%` : null} note="Of alerts fired, % that are genuine shortages" />
+              <MetricRow label="Recall" value={typeof report.recall === 'number' ? `${(report.recall * 100).toFixed(1)}%` : null} note="Of genuine shortages, % caught by the model" />
             </div>
 
             {/* Version lineage */}
             <div style={{ ...CARD }}>
               <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255,255,255,0.42)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 12 }}>Version lineage</div>
-              {data.version_lineage.length === 0 ? (
+              {report.version_lineage.length === 0 ? (
                 <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem', padding: '24px 0' }}>No model versions found.</div>
-              ) : data.version_lineage.map((v, i) => {
-                const isActive = v.status === 'active'
+              ) : report.version_lineage.map((v, i) => {
+                const status = labelText(v.status)
+                const isActive = status === 'active'
                 return (
-                  <div key={v.version} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: i < data.version_lineage.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                  <div key={`${labelText(v.version)}-${i}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: i < report.version_lineage.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
                     <div style={{ marginTop: 3, width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: isActive ? COLORS.low : 'rgba(255,255,255,0.20)', boxShadow: isActive ? `0 0 6px ${COLORS.low}` : 'none' }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.76rem', fontWeight: 600, color: isActive ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.55)' }}>{v.version}</span>
-                        <span style={{ fontSize: '0.58rem', fontWeight: 700, color: isActive ? COLORS.low : 'rgba(255,255,255,0.32)', background: isActive ? `${COLORS.low}18` : 'rgba(255,255,255,0.06)', border: `1px solid ${isActive ? COLORS.low + '30' : 'rgba(255,255,255,0.10)'}`, borderRadius: 20, padding: '1px 7px', textTransform: 'uppercase' }}>{v.status}</span>
+                        <span style={{ fontSize: '0.76rem', fontWeight: 600, color: isActive ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.55)' }}>{labelText(v.version)}</span>
+                        <span style={{ fontSize: '0.58rem', fontWeight: 700, color: isActive ? COLORS.low : 'rgba(255,255,255,0.32)', background: isActive ? `${COLORS.low}18` : 'rgba(255,255,255,0.06)', border: `1px solid ${isActive ? COLORS.low + '30' : 'rgba(255,255,255,0.10)'}`, borderRadius: 20, padding: '1px 7px', textTransform: 'uppercase' }}>{status}</span>
                       </div>
                       <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.32)', marginTop: 2 }}>
-                        {v.trained_at ? new Date(v.trained_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                        {v.f1 !== null && v.f1 !== undefined ? ` · F1 ${v.f1.toFixed(4)}` : ''}
-                        {v.roc_auc !== null && v.roc_auc !== undefined ? ` · AUC ${v.roc_auc.toFixed(4)}` : ''}
+                        {safeDate(v.trained_at)}
+                        {typeof v.f1 === 'number' ? ` · F1 ${v.f1.toFixed(4)}` : ''}
+                        {typeof v.roc_auc === 'number' ? ` · AUC ${v.roc_auc.toFixed(4)}` : ''}
                       </div>
                     </div>
                   </div>

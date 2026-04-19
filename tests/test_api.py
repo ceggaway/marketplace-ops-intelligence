@@ -343,6 +343,48 @@ def test_reports_outcomes_normalizes_nullable_legacy_fields():
     assert body["top_contexts"][0]["intervention_window"] == "unknown"
 
 
+def test_reports_outcomes_skips_missing_zone_ids_and_bad_timestamps():
+    sample_records = [
+        {
+            "recommendation_id": "rec-bad",
+            "zone_id": None,
+            "zone_name": "Broken",
+            "action_type": "surge_pricing",
+            "priority": "high",
+            "risk_level": "high",
+            "root_cause": "weather",
+            "intervention_window": "tight",
+            "score_at_time": "bad",
+            "score_after": "bad",
+            "outcome": "recovered",
+            "logged_at": "not-a-date",
+            "followed_status": "followed",
+        },
+        {
+            "recommendation_id": "rec-good",
+            "zone_id": 2,
+            "zone_name": "Bedok",
+            "action_type": None,
+            "priority": None,
+            "risk_level": None,
+            "root_cause": None,
+            "intervention_window": None,
+            "score_at_time": 0.8,
+            "score_after": 0.6,
+            "outcome": "improved",
+            "logged_at": "2024-01-01T08:00:00+00:00",
+            "followed_status": None,
+        },
+    ]
+    with patch("backend.api.routers.reports.load_outcome_records", return_value=sample_records):
+        resp = client.get("/api/v1/reports/outcomes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["recent_outcomes"][0]["zone_id"] == 2
+    assert body["recent_outcomes"][0]["logged_at"] == "2024-01-01T08:00:00+00:00"
+    assert all(z["zone_id"] != 0 for z in body["by_zone"])
+
+
 def test_reports_model_impact_reads_flat_registry_metrics(tmp_path):
     drift_file = tmp_path / "drift_report.json"
     drift_file.write_text(json.dumps({"psi": 0.05}))
@@ -355,6 +397,22 @@ def test_reports_model_impact_reads_flat_registry_metrics(tmp_path):
     assert body["precision"] == _SAMPLE_META["precision"]
     assert body["recall"] == _SAMPLE_META["recall"]
     assert body["f1"] == _SAMPLE_META["f1"]
+
+
+def test_reports_model_impact_handles_sparse_registry(tmp_path):
+    drift_file = tmp_path / "drift_report.json"
+    drift_file.write_text(json.dumps({"psi": "bad"}))
+    with patch("backend.api.routers.reports.OUT_DIR", tmp_path), \
+         patch("backend.api.routers.reports.registry.get_active_version_meta", return_value={"version_id": None, "precision": "bad"}), \
+         patch("backend.api.routers.reports.registry._load_registry", return_value={"versions": {"v1": {"metrics": None, "status": None, "trained_at": "bad-date"}}}):
+        resp = client.get("/api/v1/reports/model-impact")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["psi"] == 0.0
+    assert body["active_version"] is None
+    assert body["precision"] is None
+    assert body["version_lineage"][0]["status"] == "unknown"
+    assert body["version_lineage"][0]["trained_at"] == ""
 
 
 def test_reports_zone_performance_caps_window_to_retention(tmp_path):
@@ -376,6 +434,22 @@ def test_reports_zone_performance_caps_window_to_retention(tmp_path):
     body = resp.json()
     assert body["observation_days"] == 14
     assert "retains only the most recent 14 days" in body["note"]
+
+
+def test_reports_zone_performance_handles_sparse_predictions(tmp_path):
+    now_iso = datetime.now(timezone.utc).isoformat()
+    history_file = tmp_path / "zone_scores_history.jsonl"
+    history_file.write_text(json.dumps({
+        "timestamp": now_iso,
+        "zones": {"1": 0.8, "bad": "oops"},
+    }))
+    predictions_file = tmp_path / "predictions.csv"
+    predictions_file.write_text("region\nCentral\n")
+    with patch("backend.api.routers.reports.OUT_DIR", tmp_path):
+        resp = client.get("/api/v1/reports/zone-performance")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["chronic_high_risk"], list)
 
 
 # ── /model/status ─────────────────────────────────────────────────────────────
