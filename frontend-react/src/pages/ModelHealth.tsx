@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Lightbulb, AlertTriangle, TrendingUp } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
@@ -108,8 +108,9 @@ export default function ModelHealth() {
 
   const isLoading = lS || lR || lD
 
-  // Capture current time once — used to compute relative age labels (keeps render pure)
-  const nowMs = useMemo(() => Date.now(), [])
+  // Set after mount so Date.now() runs in an effect, not during render
+  const [nowMs, setNowMs] = useState(0)
+  useEffect(() => { setNowMs(Date.now()) }, [])
 
   const psi     = drift?.psi     ?? 0.0
   const m       = (modelStatus?.training_metrics ?? {}) as Record<string, number>

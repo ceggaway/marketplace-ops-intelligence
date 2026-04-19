@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -93,9 +93,6 @@ export default function Overview() {
     refetchInterval: 120000,
   })
 
-  // Capture current time once per render cycle — keeps filterTrend pure
-  const nowMs = useMemo(() => Date.now(), [])
-
   if (isLoading) return <Spinner />
   if (isError)   return <ApiError message="The overview endpoint could not be loaded." />
   if (!data)     return <EmptyState title="Overview unavailable" message="No overview payload was returned by the backend." />
@@ -103,13 +100,16 @@ export default function Overview() {
   const kpis = data.kpis
 
   /* ── Time range filter ───────────────────────────────────────────────── */
+  // Cutoff is relative to the latest data point, not wall clock — avoids Date.now() in render
+  // and is more semantically correct (shows last N hours of available data).
   function filterTrend(points: { timestamp: string; value: number }[]) {
-    if (timeRange === 'Last 7 Days') return points
+    if (timeRange === 'Last 7 Days' || points.length === 0) return points
     const hoursBack = timeRange === 'Last 6 Hours' ? 6 : 24
-    const cutoff = nowMs - hoursBack * 3_600_000
-    const filtered = points.filter(p => new Date(p.timestamp).getTime() >= cutoff)
+    const latestTs  = Math.max(...points.map(p => new Date(p.timestamp).getTime()))
+    const cutoff    = latestTs - hoursBack * 3_600_000
+    const filtered  = points.filter(p => new Date(p.timestamp).getTime() >= cutoff)
     // Fall back to last N entries if data is older than the cutoff (e.g. infrequent scoring)
-    if (filtered.length === 0 && points.length > 0) return points.slice(-hoursBack)
+    if (filtered.length === 0) return points.slice(-hoursBack)
     return filtered
   }
 
