@@ -129,7 +129,7 @@ export default function AskOpsAI({ open, onClose }: Props) {
       }])
     }
     if (open) setTimeout(() => inputRef.current?.focus(), 300)
-  }, [open])
+  }, [open, messages.length])
 
   // Scroll to bottom on new message
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Lightbulb, AlertTriangle, TrendingUp } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
@@ -107,10 +107,6 @@ export default function ModelHealth() {
   const { data: versions } = useQuery({ queryKey: ['modelVersions'], queryFn: api.modelVersions, staleTime: 60000 })
 
   const isLoading = lS || lR || lD
-
-  // Set after mount so Date.now() runs in an effect, not during render
-  const [nowMs, setNowMs] = useState(0)
-  useEffect(() => { setNowMs(Date.now()) }, [])
 
   const psi     = drift?.psi     ?? 0.0
   const m       = (modelStatus?.training_metrics ?? {}) as Record<string, number>
@@ -341,13 +337,6 @@ export default function ModelHealth() {
               ? <Badge label="Success" color={COLORS.low} />
               : <Badge label="Never" color="rgba(255,255,255,0.28)" />
             }
-            {modelStatus?.last_retrained_at && (() => {
-              const diffMs = nowMs - new Date(modelStatus.last_retrained_at!).getTime()
-              const diffH  = Math.floor(diffMs / 3_600_000)
-              const diffD  = Math.floor(diffH / 24)
-              const label  = diffD >= 1 ? `${diffD}d ago` : diffH >= 1 ? `${diffH}h ago` : 'just now'
-              return <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)' }}>{label}</span>
-            })()}
           </div>
         </GlassCard>
       </div>
