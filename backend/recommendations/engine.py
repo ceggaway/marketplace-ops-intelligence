@@ -24,11 +24,17 @@ Intervention lag constants (minutes):
 """
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 
+from backend.recommendations.policy_effectiveness import (
+    action_type_from_recommendation,
+    effectiveness_for_context,
+    load_outcome_records,
+)
 from backend.recommendations.zone_graph import ZONE_NAMES, get_adjacent_ids
 
 OUTPUTS_DIR   = Path("data/outputs")
@@ -223,12 +229,54 @@ def _build_alternatives(
     return alts
 
 
+def _recommendation_id(zone_id: int, timestamp: str, action_type: str, risk_level: str) -> str:
+    raw = f"{zone_id}|{timestamp}|{action_type}|{risk_level}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _enrich_alternatives_with_policy(
+    alternatives: list[dict],
+    risk_level: str,
+    root_cause: str,
+    window: str,
+    has_adj_risk: bool,
+    records: list[dict],
+) -> list[dict]:
+    enriched: list[dict] = []
+    for alt in alternatives:
+        action_type = action_type_from_recommendation(risk_level, str(alt.get("action", "")))
+        stats = effectiveness_for_context(
+            action_type=action_type,
+            risk_level=risk_level,
+            root_cause=root_cause,
+            intervention_window=window,
+            adjacent_risk_flag=has_adj_risk,
+            records=records,
+        )
+        alt = alt.copy()
+        alt["expected_improvement_rate"] = stats["improvement_rate"]
+        alt["confidence_band"] = stats["confidence_band"]
+        alt["evidence_count"] = stats["evidence_count"]
+        alt["policy_rank_reason"] = stats["policy_rank_reason"]
+        enriched.append(alt)
+
+    return sorted(
+        enriched,
+        key=lambda alt: (
+            not bool(alt.get("viable")),
+            -float(alt.get("expected_improvement_rate", 0.0)),
+            -int(alt.get("evidence_count", 0)),
+        ),
+    )
+
+
 # ── Main builder ──────────────────────────────────────────────────────────────
 
 def _build_recommendation(
     row: pd.Series,
     risk_map: dict[int, str],
     baselines: dict,
+    policy_records: list[dict] | None = None,
     critical_count: int = 5,
 ) -> dict:
     score       = float(row.get("delay_risk_score", 0))
@@ -239,7 +287,8 @@ def _build_recommendation(
     expl_tag    = str(row.get("explanation_tag", "") or "")
     zone_id     = int(row.get("zone_id", 0))
     zone_name   = str(row.get("zone_name", "this zone"))
-    now         = datetime.now(timezone.utc).isoformat()
+    last_updated = datetime.now(timezone.utc).isoformat()
+    snapshot_ts  = str(row.get("timestamp", "") or last_updated)
 
     # ── Derived signals ───────────────────────────────────────────────────────
     is_raining = "rain" in expl_tag.lower()
@@ -440,9 +489,27 @@ def _build_recommendation(
         priority       = "low"
 
     # ── Alternatives ──────────────────────────────────────────────────────────
-    alternatives = _build_alternatives(risk_level, root_cause, window, adj_at_risk, score)
+    action_type = action_type_from_recommendation(priority, recommendation)
+    recommendation_id = _recommendation_id(zone_id, snapshot_ts, action_type, risk_level)
+    policy_stats = effectiveness_for_context(
+        action_type=action_type,
+        risk_level=risk_level,
+        root_cause=root_cause,
+        intervention_window=window,
+        adjacent_risk_flag=has_adj_risk,
+        records=policy_records,
+    )
+    alternatives = _enrich_alternatives_with_policy(
+        _build_alternatives(risk_level, root_cause, window, adj_at_risk, score),
+        risk_level=risk_level,
+        root_cause=root_cause,
+        window=window,
+        has_adj_risk=has_adj_risk,
+        records=policy_records or [],
+    )
 
     return {
+        "recommendation_id":      recommendation_id,
         "zone_id":               zone_id,
         "zone_name":             zone_name,
         "region":                str(row.get("region", "")),
@@ -454,7 +521,7 @@ def _build_recommendation(
         "confidence":            confidence,
         "priority":              priority,
         "explanation_tag":       expl_tag,
-        "last_updated":          now,
+        "last_updated":          last_updated,
         # Gap 1: zone-relative threshold diagnostics
         "eta_minutes":           eta,
         "intervention_window":   window,
@@ -463,6 +530,14 @@ def _build_recommendation(
         "network_warning":       network_warn,
         # Gap 3/5: root cause + alternatives
         "root_cause":            root_cause,
+        "action_type":           action_type,
+        "expected_recovery_rate": policy_stats["recovery_rate"],
+        "expected_improvement_rate": policy_stats["improvement_rate"],
+        "estimated_score_delta": policy_stats["estimated_score_delta"],
+        "confidence_band":       policy_stats["confidence_band"],
+        "evidence_count":        policy_stats["evidence_count"],
+        "follow_rate":           policy_stats["follow_rate"],
+        "policy_rank_reason":    policy_stats["policy_rank_reason"],
         "alternative_actions":   json.dumps(alternatives),
     }
 
@@ -480,9 +555,10 @@ def generate_recommendations(predictions_df: pd.DataFrame) -> pd.DataFrame:
 
     # Load DOW baselines once (gap 1, 5)
     baselines = _load_dow_baselines()
+    policy_records = load_outcome_records()
 
     rows = [
-        _build_recommendation(row, risk_map, baselines)
+        _build_recommendation(row, risk_map, baselines, policy_records=policy_records)
         for _, row in predictions_df.iterrows()
     ]
     df = pd.DataFrame(rows)

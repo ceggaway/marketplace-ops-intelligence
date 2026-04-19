@@ -19,14 +19,22 @@ from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from backend.api.schemas.responses import OverviewResponse, RecommendationCard, ZoneDetail, ZoneSummary
+from backend.recommendations import outcome_tracker
 
 router   = APIRouter()
 OUT_DIR  = Path("data/outputs")
 
 # Cost per zone requiring intervention — configurable via env var
 _INTERVENTION_COST_PER_ZONE = float(os.environ.get("INTERVENTION_COST_PER_ZONE", "1.50"))
+
+
+class RecommendationFeedbackRequest(BaseModel):
+    followed_status: str
+    followed_by: Optional[str] = None
+    follow_note: Optional[str] = None
 
 
 def _clean(value, default=None):
@@ -99,6 +107,31 @@ def _read_zone_score_history(zone_id: int, n: int = 48) -> list[dict]:
             score = r.get("zones", {}).get(str(zone_id))
             if score is not None and "timestamp" in r:
                 result.append({"timestamp": r["timestamp"], "value": score})
+        except Exception:
+            pass
+    return result
+
+
+def _read_zone_taxi_history(zone_id: int, n: int = 48) -> list[dict]:
+    """
+    Read per-zone taxi count history from zone_scores_history.jsonl.
+
+    Batch_scorer v2+ stores a "taxi_counts" key alongside "zones" in each
+    JSONL record, enabling real per-zone supply trend charts in zone detail.
+    Records written by older scorer versions that lack this key are silently
+    skipped, so the endpoint degrades gracefully.
+    """
+    path = OUT_DIR / "zone_scores_history.jsonl"
+    if not path.exists():
+        return []
+    lines = path.read_text().strip().splitlines()[-n:]
+    result = []
+    for line in lines:
+        try:
+            r     = json.loads(line)
+            count = r.get("taxi_counts", {}).get(str(zone_id))
+            if count is not None and "timestamp" in r:
+                result.append({"timestamp": r["timestamp"], "value": int(count)})
         except Exception:
             pass
     return result
@@ -285,13 +318,14 @@ def get_zone_detail(zone_id: int):
         if not zone_rec.empty:
             rec = zone_rec.iloc[0].to_dict()
 
-    # risk_score_history: real per-zone historical risk scores from zone_scores_history.jsonl.
-    # demand_trend / delay_trend: we have no per-zone taxi-count or delay-time history —
-    # returning empty arrays rather than system-level pipeline aggregates which would be
-    # semantically misleading when presented as zone-specific data.
+    # risk_score_history: real per-zone historical risk scores.
+    # demand_trend: per-zone taxi count over time (populated from batch_scorer v2+
+    #   "taxi_counts" key in zone_scores_history.jsonl; empty for older runs).
+    # delay_trend: per-zone depletion rate history is not yet logged per-zone —
+    #   returning [] to avoid presenting system-level aggregates as zone data.
     score_hist   = _read_zone_score_history(zone_id, n=48)
-    demand_trend: list[dict] = []
-    delay_trend:  list[dict] = []
+    demand_trend = _read_zone_taxi_history(zone_id, n=48)
+    delay_trend: list[dict] = []
 
     return {
         "zone_id":             zone_id,
@@ -330,3 +364,26 @@ def get_recommendations(priority: Optional[str] = None):
     # instead of pandas' default "NaT" or "NaN" strings.
     rec_df = rec_df.where(rec_df.notna(), other=None)
     return json.loads(rec_df.to_json(orient="records", date_format="iso"))
+
+
+@router.post("/recommendations/{recommendation_id}/feedback")
+def mark_recommendation_feedback(recommendation_id: str, req: RecommendationFeedbackRequest):
+    status = req.followed_status.strip().lower()
+    if status not in {"followed", "not_followed"}:
+        raise HTTPException(status_code=400, detail="followed_status must be 'followed' or 'not_followed'")
+
+    updated = outcome_tracker.record_feedback(
+        recommendation_id=recommendation_id,
+        followed_status=status,
+        followed_by=req.followed_by,
+        follow_note=req.follow_note,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Recommendation {recommendation_id} not found")
+
+    return {
+        "status": "ok",
+        "recommendation_id": recommendation_id,
+        "followed_status": status,
+        "followed_at": updated.get("followed_at"),
+    }

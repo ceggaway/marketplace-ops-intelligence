@@ -19,6 +19,7 @@ Covers:
 """
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -52,6 +53,7 @@ _SAMPLE_PREDICTIONS = pd.DataFrame([
 
 _SAMPLE_RECS = pd.DataFrame([
     {
+        "recommendation_id": "rec-1",
         "zone_id": 1, "zone_name": "Orchard", "region": "Central",
         "risk_level": "high", "delay_risk_score": 0.85,
         "issue_detected": "High delay risk",
@@ -60,6 +62,14 @@ _SAMPLE_RECS = pd.DataFrame([
         "confidence": 0.85, "priority": "high",
         "explanation_tag": "demand spike",
         "last_updated": "2024-01-01T08:00:00+00:00",
+        "action_type": "driver_incentive",
+        "expected_recovery_rate": 0.44,
+        "expected_improvement_rate": 0.71,
+        "estimated_score_delta": -0.11,
+        "confidence_band": "medium",
+        "evidence_count": 9,
+        "follow_rate": 0.56,
+        "policy_rank_reason": "same action and risk level",
     },
 ])
 
@@ -252,6 +262,7 @@ def test_recommendations_200():
         resp = client.get("/api/v1/recommendations")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+    assert "recommendation_id" in resp.json()[0]
 
 
 def test_recommendations_priority_filter():
@@ -260,6 +271,82 @@ def test_recommendations_priority_filter():
     assert resp.status_code == 200
     recs = resp.json()
     assert all(r["priority"] == "high" for r in recs)
+
+
+def test_recommendation_feedback_404_when_missing():
+    with patch("backend.api.routers.operational.outcome_tracker.record_feedback", return_value=None):
+        resp = client.post("/api/v1/recommendations/missing-id/feedback", json={"followed_status": "followed"})
+    assert resp.status_code == 404
+
+
+def test_recommendation_feedback_200():
+    with patch("backend.api.routers.operational.outcome_tracker.record_feedback", return_value={"followed_at": "2024-01-01T08:05:00+00:00"}):
+        resp = client.post("/api/v1/recommendations/rec-1/feedback", json={"followed_status": "followed", "followed_by": "ops"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["recommendation_id"] == "rec-1"
+    assert body["followed_status"] == "followed"
+
+
+def test_reports_outcomes_includes_learning_breakdown():
+    sample_records = [
+        {
+            "recommendation_id": "rec-1",
+            "zone_id": 1,
+            "zone_name": "Orchard",
+            "action_type": "surge_pricing",
+            "priority": "high",
+            "risk_level": "high",
+            "root_cause": "weather",
+            "intervention_window": "tight",
+            "score_at_time": 0.8,
+            "score_after": 0.5,
+            "outcome": "recovered",
+            "logged_at": "2024-01-01T08:00:00+00:00",
+            "followed_status": "followed",
+        }
+    ]
+    with patch("backend.api.routers.reports.load_outcome_records", return_value=sample_records):
+        resp = client.get("/api/v1/reports/outcomes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "by_follow_status" in body
+    assert "top_contexts" in body
+
+
+def test_reports_model_impact_reads_flat_registry_metrics(tmp_path):
+    drift_file = tmp_path / "drift_report.json"
+    drift_file.write_text(json.dumps({"psi": 0.05}))
+    with patch("backend.api.routers.reports.OUT_DIR", tmp_path), \
+         patch("backend.api.routers.reports.registry.get_active_version_meta", return_value=_SAMPLE_META), \
+         patch("backend.api.routers.reports.registry._load_registry", return_value=_SAMPLE_REGISTRY):
+        resp = client.get("/api/v1/reports/model-impact")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["precision"] == _SAMPLE_META["precision"]
+    assert body["recall"] == _SAMPLE_META["recall"]
+    assert body["f1"] == _SAMPLE_META["f1"]
+
+
+def test_reports_zone_performance_caps_window_to_retention(tmp_path):
+    now_iso = datetime.now(timezone.utc).isoformat()
+    history_file = tmp_path / "zone_scores_history.jsonl"
+    history_file.write_text(json.dumps({
+        "timestamp": now_iso,
+        "zones": {"1": 0.8, "2": 0.3},
+    }))
+    predictions_file = tmp_path / "predictions.csv"
+    predictions_file.write_text(
+        "zone_id,zone_name,region\n"
+        "1,Orchard,Central\n"
+        "2,Bedok,East\n"
+    )
+    with patch("backend.api.routers.reports.OUT_DIR", tmp_path):
+        resp = client.get("/api/v1/reports/zone-performance?days=30")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["observation_days"] == 14
+    assert "retains only the most recent 14 days" in body["note"]
 
 
 # ── /model/status ─────────────────────────────────────────────────────────────

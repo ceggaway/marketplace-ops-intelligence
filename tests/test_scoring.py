@@ -167,11 +167,15 @@ def test_high_risk_fast_depletion_triggers_action():
 
 
 def test_recommendation_has_required_keys():
-    rec = _build_recommendation(_rec_row(), {}, {})
+    rec = _build_recommendation(_rec_row(), {}, {}, policy_records=[])
     required = ["zone_id", "zone_name", "risk_level", "recommendation",
                 "expected_impact", "confidence", "priority", "last_updated",
                 "eta_minutes", "intervention_window", "adjacent_risk_zones",
-                "network_warning", "root_cause", "alternative_actions"]
+                "network_warning", "root_cause", "alternative_actions",
+                "recommendation_id", "action_type", "expected_recovery_rate",
+                "expected_improvement_rate", "estimated_score_delta",
+                "confidence_band", "evidence_count", "follow_rate",
+                "policy_rank_reason"]
     for key in required:
         assert key in rec
 
@@ -179,5 +183,12 @@ def test_recommendation_has_required_keys():
 def test_confidence_in_range():
     for score in [0.1, 0.5, 0.85, 0.99]:
         risk = _assign_risk(score)
-        rec  = _build_recommendation(_rec_row(delay_risk_score=score, risk_level=risk), {}, {})
+        rec  = _build_recommendation(_rec_row(delay_risk_score=score, risk_level=risk), {}, {}, policy_records=[])
         assert 0.0 <= rec["confidence"] <= 1.0
+
+
+def test_recommendation_policy_defaults_when_no_history():
+    rec = _build_recommendation(_rec_row(delay_risk_score=0.82, risk_level="high"), {}, {}, policy_records=[])
+    assert rec["confidence_band"] == "low"
+    assert rec["evidence_count"] == 0
+    assert "rule-based default" in rec["policy_rank_reason"].lower()

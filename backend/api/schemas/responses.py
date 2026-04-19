@@ -65,6 +65,7 @@ class ZoneDetail(ZoneSummary):
 
 
 class RecommendationCard(BaseModel):
+    recommendation_id: str
     zone_id: int
     zone_name: str
     region: str
@@ -83,6 +84,14 @@ class RecommendationCard(BaseModel):
     adjacent_risk_zones: Optional[str] = None
     network_warning: Optional[str] = None
     root_cause: Optional[str] = None
+    action_type: Optional[str] = None
+    expected_recovery_rate: Optional[float] = None
+    expected_improvement_rate: Optional[float] = None
+    estimated_score_delta: Optional[float] = None
+    confidence_band: Optional[str] = None
+    evidence_count: Optional[int] = None
+    follow_rate: Optional[float] = None
+    policy_rank_reason: Optional[str] = None
     alternative_actions: Optional[str] = None
 
 
@@ -149,3 +158,70 @@ class ServiceStatus(BaseModel):
 class ServicesHealth(BaseModel):
     services: list[ServiceStatus]
     checked_at: datetime
+
+
+# ── Report schemas ────────────────────────────────────────────────────────────
+
+class ZonePerformanceEntry(BaseModel):
+    zone_id: int
+    zone_name: str
+    region: str
+    mean_score: float
+    pct_time_high: float
+    pct_time_medium: float
+    pct_time_low: float
+    trend: str                        # "improving" | "stable" | "deteriorating"
+    trend_delta: float                # recent mean - prior mean (negative = improving)
+    observations: int
+
+
+class ZonePerformanceReport(BaseModel):
+    generated_at: datetime
+    observation_days: int
+    chronic_high_risk: list[ZonePerformanceEntry]
+    most_improved: list[ZonePerformanceEntry]
+    deteriorating: list[ZonePerformanceEntry]
+    note: Optional[str] = None
+
+
+class OutcomeEntry(BaseModel):
+    recommendation_id: Optional[str] = None
+    zone_id: int
+    zone_name: str
+    action_type: str
+    priority: str
+    score_at_time: float
+    score_after: Optional[float] = None
+    outcome: str
+    logged_at: str
+    followed_status: Optional[str] = None
+    follow_note: Optional[str] = None
+
+
+class OutcomeReport(BaseModel):
+    generated_at: datetime
+    total_logged: int
+    total_resolved: int
+    recovery_rate: float
+    improvement_rate: float
+    worsened_rate: float
+    by_action_type: dict
+    by_follow_status: dict
+    top_contexts: list[dict] = Field(default_factory=list)
+    by_zone: list[dict] = Field(default_factory=list)
+    recent_outcomes: list[OutcomeEntry]
+    sample_size_note: str
+
+
+class ModelImpactReport(BaseModel):
+    generated_at: datetime
+    active_version: Optional[str] = None
+    psi: float
+    psi_level: str                    # "stable" | "moderate" | "significant"
+    psi_business_impact: str
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    f1: Optional[float] = None
+    estimated_false_positive_note: str
+    version_lineage: list[dict]
+    recommendation: str

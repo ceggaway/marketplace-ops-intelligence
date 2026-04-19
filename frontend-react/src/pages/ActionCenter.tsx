@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Zap, Search, SlidersHorizontal, ChevronRight, TrendingDown, Clock, Target, AlertTriangle, GitBranch } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { api } from '../lib/api'
@@ -65,15 +65,56 @@ const KPI_LABEL: React.CSSProperties = {
 }
 
 // ── Mini impact chart data generator ───────────────────────────────────────
-function buildChartData(riskScore: number) {
-  const base = riskScore
+//
+// NOTE: This chart is ILLUSTRATIVE — it is not produced by a learned impact
+// model. Worsening rate is calibrated from eta_minutes when the engine
+// provides it; otherwise it falls back to priority-tier heuristics.
+// Expected improvement uses intervention_window to zero out benefit when the
+// action window has passed.
+//
+// When real outcome data accumulates in the outcome tracker, replace these
+// heuristics with zone-type × action-type regression estimates.
+function buildChartData(rec: Recommendation) {
+  const score = rec.delay_risk_score
+  const priority = rec.priority
+  const etaMin = rec.eta_minutes          // minutes until zone crosses critical threshold
+  const window = rec.intervention_window  // 'good' | 'tight' | 'too_late'
+
+  // ── Without-action worsening rate (per hour) ──
+  // If eta_minutes is known: zone will reach ~0.85 in that many minutes.
+  // Derive the per-hour drift rate from that. Cap at 0.18 to avoid nonsensical curves.
+  const worsenPerHr: number = (() => {
+    if (etaMin != null && etaMin > 0 && etaMin < 180) {
+      return Math.min(0.18, Math.max(0.02, (0.85 - score) / (etaMin / 60)))
+    }
+    // Fallback: priority-based heuristic (validated against SG PHV patterns)
+    return priority === 'critical' ? 0.12
+         : priority === 'high'     ? 0.07
+         : priority === 'medium'   ? 0.04
+         : 0.02
+  })()
+
+  // ── With-action improvement ──
+  // intervention_window='too_late' means drivers cannot reach in time — no effect.
+  // Maximum drop is bounded: can't fall below 0.20 (structural noise floor) and
+  // can't exceed 0.35 (realistic supply response ceiling for a single run).
+  const actionDisabled = window === 'too_late'
+  const maxDrop = actionDisabled
+    ? 0
+    : Math.max(0, Math.min(score - 0.20, 0.35))
+  const speedMult = priority === 'critical' ? 1.40 : priority === 'high' ? 1.15 : 1.0
+
+  const clamp = (v: number) => Math.min(1, Math.max(0, parseFloat(v.toFixed(3))))
+  const baseAt = (hrs: number) => clamp(score + worsenPerHr * hrs)
+  const actionAt = (frac: number) => clamp(score - Math.min(maxDrop * frac * speedMult, maxDrop))
+
   return [
-    { t: 'Now',   current: base,         action: base },
-    { t: '+15m',  current: base + 0.01,  action: base - 0.04 },
-    { t: '+30m',  current: base + 0.02,  action: base - 0.09 },
-    { t: '+1h',   current: base + 0.025, action: base - 0.14 },
-    { t: '+2h',   current: base + 0.02,  action: base - 0.13 },
-    { t: '+3h',   current: base + 0.01,  action: base - 0.10 },
+    { t: 'Now',  baseline: score,        action: score },
+    { t: '+15m', baseline: baseAt(0.25), action: actionAt(0.30) },
+    { t: '+30m', baseline: baseAt(0.50), action: actionAt(0.55) },
+    { t: '+1h',  baseline: baseAt(1.00), action: actionAt(0.75) },
+    { t: '+2h',  baseline: baseAt(1.80), action: actionAt(0.90) },
+    { t: '+3h',  baseline: baseAt(2.40), action: actionAt(0.85) },
   ]
 }
 
@@ -144,10 +185,13 @@ function ActionRow({
       <div style={{ flex: '0 0 130px', flexShrink: 0 }}>
         <div style={{ fontSize: '0.72rem', color: COLORS.low, fontWeight: 600 }}>
           <TrendingDown size={11} style={{ display: 'inline', marginRight: 3 }} />
-          {rec.expected_impact || 'Expected supply improvement'}
+          {rec.expected_improvement_rate != null
+            ? `${Math.round(rec.expected_improvement_rate * 100)}% hist. improve`
+            : (rec.expected_impact || 'Expected supply improvement')}
         </div>
         <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.40)', marginTop: 3 }}>
           Score {rec.delay_risk_score.toFixed(3)}
+          {rec.evidence_count != null ? ` · ${rec.evidence_count} cases` : ''}
         </div>
       </div>
 
@@ -158,11 +202,19 @@ function ActionRow({
 }
 
 // ── Detail panel ────────────────────────────────────────────────────────────
-function DetailPanel({ rec }: { rec: Recommendation }) {
+function DetailPanel({
+  rec,
+  onFeedback,
+  feedbackPending,
+}: {
+  rec: Recommendation
+  onFeedback: (status: 'followed' | 'not_followed') => void
+  feedbackPending: boolean
+}) {
   const color = priorityColor(rec.priority)
   const confPct = rec.confidence * 100
   const confColor = confPct >= 80 ? COLORS.low : confPct >= 60 ? COLORS.medium : COLORS.high
-  const chartData = buildChartData(rec.delay_risk_score)
+  const chartData = buildChartData(rec)
   const drivers = rec.explanation_tag
     ?.replace('nan', '')
     .split(/[,·|•]/)
@@ -245,11 +297,50 @@ function DetailPanel({ rec }: { rec: Recommendation }) {
         <ConfBar value={confPct} color={confColor} />
       </div>
 
+      {(rec.expected_recovery_rate != null || rec.expected_improvement_rate != null || rec.policy_rank_reason) && (
+        <div style={{
+          background: 'rgba(79,142,247,0.05)', border: '1px solid rgba(79,142,247,0.16)',
+          borderRadius: 10, padding: '12px 14px',
+        }}>
+          <div style={{ ...SECTION_LABEL, marginBottom: 10 }}>Learned Policy Signal</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={MINI_LABEL}>Recovery</div>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: COLORS.low }}>
+                {rec.expected_recovery_rate != null ? `${Math.round(rec.expected_recovery_rate * 100)}%` : '—'}
+              </div>
+            </div>
+            <div>
+              <div style={MINI_LABEL}>Improve / Recover</div>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: COLORS.primary }}>
+                {rec.expected_improvement_rate != null ? `${Math.round(rec.expected_improvement_rate * 100)}%` : '—'}
+              </div>
+            </div>
+            <div>
+              <div style={MINI_LABEL}>Evidence</div>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', textTransform: 'capitalize' }}>
+                {rec.evidence_count ?? 0} · {rec.confidence_band ?? 'low'}
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.58)', lineHeight: 1.5 }}>
+            {rec.policy_rank_reason ?? 'Rule engine default retained; not enough resolved outcomes yet.'}
+            {rec.follow_rate != null ? ` Follow-through rate: ${Math.round(rec.follow_rate * 100)}%.` : ''}
+          </div>
+        </div>
+      )}
+
       {/* Mini chart */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <div style={{ ...SECTION_LABEL }}>Projected Shortage Score Trajectory</div>
-          <span style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.30)', fontWeight: 400, fontStyle: 'italic' }}>illustrative</span>
+          <div style={{ ...SECTION_LABEL }}>Projected Trajectory</div>
+          <span style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.30)', fontWeight: 400, fontStyle: 'italic' }}>
+            {rec.intervention_window === 'too_late'
+              ? 'action window passed'
+              : rec.eta_minutes != null
+                ? `calibrated from eta (~${rec.eta_minutes}m)`
+                : 'priority-based estimate'}
+          </span>
         </div>
         <div style={{ height: 100 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -261,10 +352,13 @@ function DetailPanel({ rec }: { rec: Recommendation }) {
                 labelStyle={{ color: 'rgba(255,255,255,0.42)', marginBottom: 2 }}
                 itemStyle={{ fontSize: 11 }}
               />
-              <Line type="monotone" dataKey="current" stroke={COLORS.high} strokeWidth={1.5} dot={false} name="Current" />
-              <Line type="monotone" dataKey="action" stroke={COLORS.low} strokeWidth={1.5} dot={false} strokeDasharray="4 2" name="With Action" />
+              <Line type="monotone" dataKey="baseline" stroke={COLORS.high} strokeWidth={1.5} dot={false} name="No action" />
+              <Line type="monotone" dataKey="action"   stroke={COLORS.low}  strokeWidth={1.5} dot={false} strokeDasharray="4 2" name="With action" />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+        <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.28)', marginTop: 4, fontStyle: 'italic' }}>
+          Illustrative only — worsening rate derived from {rec.eta_minutes != null ? 'predicted time-to-critical' : 'priority tier'}. Not a guarantee of real-world outcome.
         </div>
       </div>
 
@@ -338,6 +432,13 @@ function DetailPanel({ rec }: { rec: Recommendation }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '0.72rem', fontWeight: 600, color: alt.viable ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.45)', marginBottom: 2 }}>{alt.action}</div>
                     <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.42)', lineHeight: 1.4 }}>{alt.impact}</div>
+                    {(alt.expected_improvement_rate != null || alt.evidence_count != null) && (
+                      <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.36)', marginTop: 4 }}>
+                        {alt.expected_improvement_rate != null ? `Hist. improve ${Math.round(alt.expected_improvement_rate * 100)}%` : 'No learned signal'}
+                        {alt.evidence_count != null ? ` · ${alt.evidence_count} cases` : ''}
+                        {alt.confidence_band ? ` · ${alt.confidence_band} conf.` : ''}
+                      </div>
+                    )}
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)' }}>+{alt.time_to_effect_min}m</div>
@@ -355,8 +456,11 @@ function DetailPanel({ rec }: { rec: Recommendation }) {
         <button className="btn-glass" onClick={() => showToast(`Zone ${rec.zone_name}: shortage score ${rec.delay_risk_score.toFixed(3)}, priority ${rec.priority}. Recommended: ${rec.recommendation}`, 'info')} style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
           View Details
         </button>
-        <button className="btn-primary" onClick={() => showToast(`Action logged for ${rec.zone_name}: "${rec.recommendation}"`, 'success')} style={{ flex: 1, justifyContent: 'center', padding: '10px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-          Log Action <ChevronRight size={14} />
+        <button className="btn-primary" disabled={feedbackPending} onClick={() => onFeedback('followed')} style={{ flex: 1, justifyContent: 'center', padding: '10px 0', display: 'flex', alignItems: 'center', gap: 6, opacity: feedbackPending ? 0.7 : 1 }}>
+          Mark Followed <ChevronRight size={14} />
+        </button>
+        <button className="btn-glass" disabled={feedbackPending} onClick={() => onFeedback('not_followed')} style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: feedbackPending ? 0.7 : 1 }}>
+          Not Followed
         </button>
       </div>
     </div>
@@ -365,6 +469,7 @@ function DetailPanel({ rec }: { rec: Recommendation }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 export default function ActionCenter() {
+  const queryClient = useQueryClient()
   const [priority, setPriority] = useState('All')
   const [selectedIdx, setSelectedIdx] = useState<number>(0)
   const [search, setSearch] = useState('')
@@ -388,6 +493,32 @@ export default function ActionCenter() {
     queryKey: ['recommendations', priority],
     queryFn: () => api.recommendations(priority === 'All' ? undefined : priority.toLowerCase()),
     staleTime: 30000,
+  })
+
+  const feedbackMutation = useMutation({
+    mutationFn: ({
+      recommendationId,
+      followedStatus,
+      zoneName,
+    }: {
+      recommendationId: string
+      followedStatus: 'followed' | 'not_followed'
+      zoneName: string
+    }) => api.recommendationFeedback(recommendationId, {
+      followed_status: followedStatus,
+      followed_by: 'ops-dashboard',
+      follow_note: `${zoneName} action marked ${followedStatus.replace('_', ' ')}`,
+    }),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['reportOutcomes'] })
+      showToast(
+        `${vars.zoneName}: marked ${vars.followedStatus === 'followed' ? 'followed' : 'not followed'}.`,
+        'success',
+      )
+    },
+    onError: () => {
+      showToast('Could not save operator feedback for this recommendation.', 'error')
+    },
   })
 
   const counts = recs ? {
@@ -657,7 +788,15 @@ export default function ActionCenter() {
             {/* ── RIGHT: Detail panel ── */}
             {selected ? (
               <GlassCard hover={false} style={{ padding: '20px 22px', position: 'sticky', top: 20 }}>
-                <DetailPanel rec={selected} />
+                <DetailPanel
+                  rec={selected}
+                  feedbackPending={feedbackMutation.isPending}
+                  onFeedback={(status) => feedbackMutation.mutate({
+                    recommendationId: selected.recommendation_id,
+                    followedStatus: status,
+                    zoneName: selected.zone_name,
+                  })}
+                />
               </GlassCard>
             ) : (
               <GlassCard hover={false} style={{ padding: '32px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

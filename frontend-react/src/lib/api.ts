@@ -46,9 +46,14 @@ export interface AlternativeAction {
   cost: string
   impact: string
   viable: boolean
+  expected_improvement_rate?: number | null
+  confidence_band?: string | null
+  evidence_count?: number | null
+  policy_rank_reason?: string | null
 }
 
 export interface Recommendation {
+  recommendation_id: string
   zone_id: number; zone_name: string; region: string;
   risk_level: 'high' | 'medium' | 'low';
   priority: 'critical' | 'high' | 'medium' | 'low';
@@ -62,6 +67,14 @@ export interface Recommendation {
   adjacent_risk_zones?: string | null;
   network_warning?: string | null;
   root_cause?: string | null;
+  action_type?: string | null;
+  expected_recovery_rate?: number | null;
+  expected_improvement_rate?: number | null;
+  estimated_score_delta?: number | null;
+  confidence_band?: string | null;
+  evidence_count?: number | null;
+  follow_rate?: number | null;
+  policy_rank_reason?: string | null;
   alternative_actions?: string | null;
 }
 
@@ -148,6 +161,99 @@ async function get<T>(path: string): Promise<T> {
   return r.json()
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
+  return r.json()
+}
+
+// ── Report types ─────────────────────────────────────────────────────────────
+
+export interface ZonePerformanceEntry {
+  zone_id: number
+  zone_name: string
+  region: string
+  mean_score: number
+  pct_time_high: number
+  pct_time_medium: number
+  pct_time_low: number
+  trend: 'improving' | 'stable' | 'deteriorating'
+  trend_delta: number
+  observations: number
+}
+
+export interface ZonePerformanceReport {
+  generated_at: string
+  observation_days: number
+  chronic_high_risk: ZonePerformanceEntry[]
+  most_improved: ZonePerformanceEntry[]
+  deteriorating: ZonePerformanceEntry[]
+  note?: string
+}
+
+export interface OutcomeEntry {
+  recommendation_id?: string | null
+  zone_id: number
+  zone_name: string
+  action_type: string
+  priority: string
+  score_at_time: number
+  score_after: number | null
+  outcome: string
+  logged_at: string
+  followed_status?: string | null
+  follow_note?: string | null
+}
+
+export interface OutcomeReport {
+  generated_at: string
+  total_logged: number
+  total_resolved: number
+  recovery_rate: number
+  improvement_rate: number
+  worsened_rate: number
+  by_action_type: Record<string, Record<string, number>>
+  by_follow_status: Record<string, Record<string, number>>
+  top_contexts: Array<{
+    action_type: string
+    risk_level: string
+    root_cause: string
+    intervention_window: string
+    resolved: number
+    recovery_rate: number
+    improvement_rate: number
+    confidence_band: string
+  }>
+  by_zone: { zone_id: number; zone_name: string; interventions: number; recovery_rate: number }[]
+  recent_outcomes: OutcomeEntry[]
+  sample_size_note: string
+}
+
+export interface RecommendationFeedbackResponse {
+  status: string
+  recommendation_id: string
+  followed_status: 'followed' | 'not_followed'
+  followed_at?: string | null
+}
+
+export interface ModelImpactReport {
+  generated_at: string
+  active_version: string | null
+  psi: number
+  psi_level: string
+  psi_business_impact: string
+  precision: number | null
+  recall: number | null
+  f1: number | null
+  estimated_false_positive_note: string
+  version_lineage: { version: string; status: string; trained_at: string; f1: number | null; roc_auc: number | null }[]
+  recommendation: string
+}
+
 export const api = {
   overview: () => get<Overview>('/overview'),
   zones: (risk_level?: string, region?: string) => {
@@ -161,6 +267,10 @@ export const api = {
     const p = priority ? `?priority=${priority}` : ''
     return get<Recommendation[]>(`/recommendations${p}`)
   },
+  recommendationFeedback: (
+    recommendation_id: string,
+    payload: { followed_status: 'followed' | 'not_followed'; followed_by?: string; follow_note?: string },
+  ) => post<RecommendationFeedbackResponse>(`/recommendations/${recommendation_id}/feedback`, payload),
   modelStatus: () => get<ModelStatus>('/model/status'),
   modelVersions: () => get<ModelVersion[]>('/model/versions'),
   latestRun: () => get<LatestRun>('/pipeline/latest-run'),
@@ -172,4 +282,8 @@ export const api = {
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
     return r.json() as Promise<{ status: string; version: string; message: string }>
   }),
+  // Reports
+  reportZonePerformance: (days = 7) => get<ZonePerformanceReport>(`/reports/zone-performance?days=${days}`),
+  reportOutcomes: () => get<OutcomeReport>('/reports/outcomes'),
+  reportModelImpact: () => get<ModelImpactReport>('/reports/model-impact'),
 }

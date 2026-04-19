@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Map, Zap, Activity, Bell, Database, BarChart2, Cpu, MessageSquare, Headphones, X } from 'lucide-react'
+import { LayoutDashboard, Map, Zap, Activity, Bell, Database, BarChart2, MessageSquare, Headphones, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Alert } from '../lib/api'
@@ -13,10 +13,11 @@ import AskOpsAI from './AskOpsAI'
 const NOISE_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
-  '/':        { title: 'Overview',           sub: 'Live performance, key insights, and what\'s next.' },
-  '/zones':   { title: 'Zone Risk Monitor',  sub: 'Understand risk by location and take action where it matters most.' },
-  '/actions': { title: 'Action Center',      sub: 'Prioritized interventions that drive results.' },
-  '/health':  { title: 'Model Health',       sub: 'Monitor performance, detect drift, and keep models reliable.' },
+  '/':           { title: 'Overview',           sub: 'Live performance, key insights, and what\'s next.' },
+  '/zones':      { title: 'Zone Risk Monitor',  sub: 'Understand risk by location and take action where it matters most.' },
+  '/actions':    { title: 'Action Center',      sub: 'Prioritized interventions that drive results.' },
+  '/health':     { title: 'Model Health',       sub: 'Monitor performance, detect drift, and keep models reliable.' },
+  '/reports':    { title: 'Reports',            sub: 'Zone performance trends, intervention outcomes, and model business impact.' },
 }
 
 const NAV = [
@@ -26,10 +27,12 @@ const NAV = [
   { to: '/health',  Icon: Activity,        label: 'Model Health',   sub: 'PSI, drift & performance' },
 ]
 
-const TOOLS = [
-  { Icon: Cpu,      label: 'Simulation',   badge: 'New', msg: 'Simulation engine coming soon — build what-if scenarios for driver reallocation.' },
-  { Icon: BarChart2, label: 'Reports',      badge: undefined, msg: 'Scheduled reports will be available in a future release.' },
-  { Icon: Database, label: 'Data Explorer', badge: undefined, msg: 'Data Explorer is under development — direct SQL query access coming soon.' },
+const TOOL_NAV = [
+  { to: '/reports',    Icon: BarChart2, label: 'Reports',    sub: 'Trends & model impact',    badge: undefined },
+]
+
+const TOOLS_COMING = [
+  { Icon: Database, label: 'Data Explorer', msg: 'Data Explorer is under development — direct SQL query access coming soon.' },
 ]
 
 function NavItem({ to, Icon, label, sub }: typeof NAV[0]) {
@@ -148,12 +151,37 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div style={{ fontSize: '0.52rem', fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.26)', padding: '18px 8px 8px' }}>
             Tools
           </div>
-          {TOOLS.map(({ Icon, label, badge, msg }) => (
+          {TOOL_NAV.map(({ to, Icon, label, sub, badge }) => (
+            <NavLink key={to} to={to} style={({ isActive }) => ({
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '9px 10px', borderRadius: 10, marginBottom: 1,
+              background: isActive ? 'rgba(79,142,247,0.14)' : 'transparent',
+              border: `1px solid ${isActive ? 'rgba(79,142,247,0.30)' : 'transparent'}`,
+              color: isActive ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.46)',
+              textDecoration: 'none', transition: 'all 0.18s ease',
+            })}>
+              {({ isActive }) => (
+                <>
+                  <Icon size={14} strokeWidth={1.75} color={isActive ? COLORS.primary : 'rgba(255,255,255,0.42)'} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: isActive ? 500 : 400, lineHeight: 1.2 }}>{label}</div>
+                    <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.28)', marginTop: 1 }}>{sub}</div>
+                  </div>
+                  {badge && (
+                    <span style={{ fontSize: '0.52rem', fontWeight: 600, color: COLORS.low, background: `${COLORS.low}18`, border: `1px solid ${COLORS.low}30`, borderRadius: 20, padding: '1px 7px', flexShrink: 0 }}>
+                      {badge}
+                    </span>
+                  )}
+                </>
+              )}
+            </NavLink>
+          ))}
+          {TOOLS_COMING.map(({ Icon, label, msg }) => (
             <button key={label} onClick={() => showToast(msg, 'info')} style={{
               display: 'flex', alignItems: 'center', gap: 10, width: '100%',
               padding: '9px 10px', borderRadius: 10, marginBottom: 1,
               background: 'transparent', border: '1px solid transparent',
-              color: 'rgba(255,255,255,0.38)', cursor: 'pointer',
+              color: 'rgba(255,255,255,0.28)', cursor: 'pointer',
               fontFamily: 'Inter, sans-serif', textAlign: 'left',
               transition: 'all 0.18s',
             }}
@@ -161,12 +189,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
             >
               <Icon size={14} strokeWidth={1.75} />
-              <span style={{ fontSize: '0.82rem', fontWeight: 400 }}>{label}</span>
-              {badge && (
-                <span style={{ marginLeft: 'auto', fontSize: '0.52rem', fontWeight: 600, color: COLORS.low, background: `${COLORS.low}18`, border: `1px solid ${COLORS.low}30`, borderRadius: 20, padding: '1px 7px' }}>
-                  {badge}
-                </span>
-              )}
+              <div>
+                <div style={{ fontSize: '0.82rem', fontWeight: 400, lineHeight: 1.2 }}>{label}</div>
+                <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.20)', marginTop: 1 }}>Coming soon</div>
+              </div>
             </button>
           ))}
         </nav>

@@ -28,9 +28,15 @@ import pandas as pd
 
 from backend.registry import model_registry as registry
 
-OUTPUTS_DIR          = Path("data/outputs")
-RISK_HIGH_THRESHOLD  = 0.70
-RISK_MED_THRESHOLD   = 0.40
+import os
+
+OUTPUTS_DIR = Path("data/outputs")
+
+# Risk classification thresholds — configurable via environment so ops can
+# tune sensitivity without code changes (e.g., lower RISK_HIGH_THRESHOLD
+# during monsoon season to catch earlier-stage shortages).
+RISK_HIGH_THRESHOLD = float(os.environ.get("RISK_HIGH_THRESHOLD", "0.70"))
+RISK_MED_THRESHOLD  = float(os.environ.get("RISK_MED_THRESHOLD",  "0.40"))
 
 
 def run_batch(feature_df: pd.DataFrame) -> dict:
@@ -49,9 +55,10 @@ def run_batch(feature_df: pd.DataFrame) -> dict:
     if clean_df.empty:
         _write_empty_outputs(run_id)
         return _build_meta(run_id, run_start, 0, len(failed_df), 0, False,
-                           active_meta.get("version_id", "unknown"), "failed")
+                           active_meta.get("version_id", "unknown"), "failed",
+                           feature_nan_count=0)
 
-    X     = _prepare_features(clean_df, schema_cols)
+    X, feature_nan_count = _prepare_features(clean_df, schema_cols)
     probs = model.predict_proba(X)[:, 1]
 
     result_df = clean_df[["zone_id", "zone_name", "region", "timestamp"]].copy()
@@ -139,6 +146,7 @@ def run_batch(feature_df: pd.DataFrame) -> dict:
         high_risk_zones_now=high_risk_zones_now,
         supply_now=supply_now,
         rapid_depletion_zones=rapid_depletion_zones,
+        feature_nan_count=feature_nan_count,
     )
     return run_meta
 
@@ -153,7 +161,15 @@ def _append_zone_score_history(timestamp: str, result_df: pd.DataFrame) -> None:
     charts show real per-zone historical risk scores rather than the repeated
     current score.
 
-    Format: {"timestamp": "<ISO>", "zones": {"<zone_id>": <score>, ...}}
+    Format:
+        {
+          "timestamp": "<ISO>",
+          "zones":       {"<zone_id>": <risk_score>, ...},
+          "taxi_counts": {"<zone_id>": <taxi_count>, ...}   ← added for demand_trend
+        }
+
+    taxi_counts enables the zone detail endpoint to populate demand_trend with
+    real per-zone supply history instead of returning empty arrays.
     File is capped at _ZONE_HISTORY_MAX_LINES to prevent unbounded growth.
     """
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -162,7 +178,13 @@ def _append_zone_score_history(timestamp: str, result_df: pd.DataFrame) -> None:
         for _, row in result_df.iterrows()
         if "zone_id" in result_df.columns and "delay_risk_score" in result_df.columns
     }
-    record = json.dumps({"timestamp": timestamp, "zones": zone_scores})
+    # Per-zone taxi counts for the demand_trend chart in zone detail
+    zone_taxi: dict[str, int] = {}
+    if "taxi_count" in result_df.columns and "zone_id" in result_df.columns:
+        for _, row in result_df.iterrows():
+            zone_taxi[str(int(row["zone_id"]))] = int(row.get("taxi_count", 0))
+
+    record = json.dumps({"timestamp": timestamp, "zones": zone_scores, "taxi_counts": zone_taxi})
 
     existing: list[str] = []
     if ZONE_SCORE_HISTORY_PATH.exists():
@@ -237,13 +259,25 @@ def _validate_schema(df: pd.DataFrame, schema_cols: list[str]) -> tuple[pd.DataF
     return df.copy(), pd.DataFrame()
 
 
-def _prepare_features(df: pd.DataFrame, schema_cols: list[str]) -> pd.DataFrame:
+def _prepare_features(df: pd.DataFrame, schema_cols: list[str]) -> tuple[pd.DataFrame, int]:
+    """
+    Select and clean feature columns for model inference.
+
+    Returns (X, feature_nan_count) where feature_nan_count is the number of
+    NaN cells filled with 0 — a proxy for upstream data quality issues.
+    A high count indicates that ingestion sources (carpark, weather, travel
+    times) may have partially failed and the model is running on incomplete
+    features. This count is surfaced in pipeline.log for ops visibility.
+    """
     available = [c for c in schema_cols if c in df.columns]
     X = df[available].copy()
     bool_cols = X.select_dtypes(include="bool").columns
     X[bool_cols] = X[bool_cols].astype(int)
+    # Count NaN cells before filling — each represents a missing feature value
+    # that falls back to 0, potentially degrading prediction quality.
+    feature_nan_count = int(X.isna().sum().sum())
     X = X.fillna(0)
-    return X
+    return X, feature_nan_count
 
 
 def _write_failed_rows(failed_df: pd.DataFrame, run_id: str) -> None:
@@ -265,6 +299,7 @@ def _build_meta(
     drift_flag, model_version, status, latency_ms=0,
     avg_delay_min=0.0, fulfilment_rate=0.0, total_taxi_count=0,
     high_risk_zones_now=0, supply_now=0, rapid_depletion_zones=0,
+    feature_nan_count=0,
 ) -> dict:
     return {
         "run_id":                 run_id,
@@ -283,4 +318,9 @@ def _build_meta(
         "high_risk_zones_now":    high_risk_zones_now,
         "supply_now":             supply_now,
         "rapid_depletion_zones":  rapid_depletion_zones,
+        # Number of feature cells filled with 0 due to missing upstream data.
+        # Non-zero values indicate partial ingestion failures (carpark, weather,
+        # travel-time sources). Surfaced in pipeline.log so ops can see when
+        # predictions may be less reliable due to incomplete feature inputs.
+        "feature_nan_count":      feature_nan_count,
     }

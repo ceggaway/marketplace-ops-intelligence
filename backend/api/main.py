@@ -16,7 +16,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routers import operational, ml_health, ai_chat
+from backend.api.routers import operational, ml_health, ai_chat, reports
 
 app = FastAPI(
     title="Marketplace Ops Intelligence API",
@@ -36,9 +36,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(operational.router, prefix="/api/v1", tags=["operational"])
+app.include_router(operational.router,  prefix="/api/v1", tags=["operational"])
 app.include_router(ml_health.router,   prefix="/api/v1", tags=["ml-health"])
 app.include_router(ai_chat.router,     prefix="/api/v1", tags=["ai-chat"])
+app.include_router(reports.router,     prefix="/api/v1", tags=["reports"])
 
 
 @app.get("/health")

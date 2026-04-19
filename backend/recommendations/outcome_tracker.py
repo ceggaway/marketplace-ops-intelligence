@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from backend.recommendations.policy_effectiveness import action_type_from_recommendation, eta_bucket
+
 OUTCOME_LOG = Path("data/outputs/recommendation_outcomes.jsonl")
 RECOVERY_WINDOW_MIN = 30
 SCORE_RECOVERED_THRESH = 0.70   # score dropped to below this fraction of original
@@ -36,20 +38,7 @@ SCORE_IMPROVED_THRESH  = 0.90   # score dropped to below this fraction of origin
 
 def _classify_action_type(priority: str, recommendation: str) -> str:
     """Derive a canonical action type from the recommendation text."""
-    rec_lower = recommendation.lower()
-    if "escalat" in rec_lower:
-        return "escalation"
-    if "surge" in rec_lower or "fare" in rec_lower:
-        return "surge_pricing"
-    if "incentive" in rec_lower:
-        return "driver_incentive"
-    if "push" in rec_lower or "notification" in rec_lower or "notify" in rec_lower:
-        return "push_notification"
-    if priority in ("medium",) and "monitor" in rec_lower:
-        return "monitor"
-    if priority == "low":
-        return "none"
-    return "push_notification"
+    return action_type_from_recommendation(priority, recommendation)
 
 
 def log_recommendations(recs_df: pd.DataFrame) -> None:
@@ -69,18 +58,44 @@ def log_recommendations(recs_df: pd.DataFrame) -> None:
                 str(row.get("recommendation", "")),
             )
             record = {
+                "recommendation_id": str(row.get("recommendation_id", "")),
                 "zone_id":       int(row.get("zone_id", 0)),
                 "zone_name":     str(row.get("zone_name", "")),
                 "action_type":   action_type,
                 "priority":      str(row.get("priority", "low")),
                 "score_at_time": round(float(row.get("delay_risk_score", 0)), 4),
                 "risk_level":    str(row.get("risk_level", "low")),
+                "root_cause":    str(row.get("root_cause", "unknown")),
+                "intervention_window": str(row.get("intervention_window", "unknown")),
+                "eta_bucket":    eta_bucket(row.get("eta_minutes")),
+                "adjacent_risk_flag": bool(str(row.get("adjacent_risk_zones", "")).strip()),
+                "alternative_actions": str(row.get("alternative_actions", "")),
+                "expected_recovery_rate": _float_or_none(row.get("expected_recovery_rate")),
+                "expected_improvement_rate": _float_or_none(row.get("expected_improvement_rate")),
+                "estimated_score_delta": _float_or_none(row.get("estimated_score_delta")),
+                "confidence_band": str(row.get("confidence_band", "low")),
+                "evidence_count": int(_float_or_none(row.get("evidence_count")) or 0),
+                "follow_rate": _float_or_none(row.get("follow_rate")),
+                "policy_rank_reason": str(row.get("policy_rank_reason", "")),
                 "logged_at":     now_iso,
                 "check_after":   check_t,
                 "outcome":       None,
                 "score_after":   None,
+                "followed_status": None,
+                "followed_at":   None,
+                "followed_by":   None,
+                "follow_note":   None,
             }
             f.write(json.dumps(record) + "\n")
+
+
+def _float_or_none(value) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
 
 
 def check_and_update_outcomes(current_preds_df: pd.DataFrame) -> list[dict]:
@@ -149,6 +164,55 @@ def check_and_update_outcomes(current_preds_df: pd.DataFrame) -> list[dict]:
 
     OUTCOME_LOG.write_text("\n".join(json.dumps(r) for r in updated) + "\n")
     return resolved
+
+
+def record_feedback(
+    recommendation_id: str,
+    followed_status: str,
+    followed_by: str | None = None,
+    follow_note: str | None = None,
+) -> dict | None:
+    """
+    Persist operator follow-through on a recommendation. Updates the most recent
+    matching record in-place. Repeated submissions overwrite prior feedback so
+    the latest operator intent is canonical.
+    """
+    if not OUTCOME_LOG.exists():
+        return None
+
+    raw = OUTCOME_LOG.read_text().strip().splitlines()
+    if not raw:
+        return None
+
+    updated: list[dict] = []
+    matched: dict | None = None
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    parsed = []
+    for line in raw:
+        try:
+            parsed.append(json.loads(line))
+        except Exception:
+            continue
+
+    for rec in parsed:
+        if rec.get("recommendation_id") == recommendation_id:
+            matched = rec
+
+    if matched is None:
+        return None
+
+    for rec in parsed:
+        if rec.get("recommendation_id") == recommendation_id:
+            rec["followed_status"] = followed_status
+            rec["followed_at"] = now_iso
+            rec["followed_by"] = followed_by
+            rec["follow_note"] = follow_note
+            matched = rec
+        updated.append(rec)
+
+    OUTCOME_LOG.write_text("\n".join(json.dumps(r) for r in updated) + "\n")
+    return matched
 
 
 def get_recent_outcomes(n: int = 100) -> list[dict]:
