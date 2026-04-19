@@ -1,18 +1,5 @@
 import { useEffect, useState } from 'react'
-
-export interface ToastMessage {
-  id: number
-  message: string
-  type?: 'info' | 'success' | 'warning' | 'error'
-}
-
-let _nextId = 1
-const _listeners: Set<(t: ToastMessage) => void> = new Set()
-
-export function showToast(message: string, type: ToastMessage['type'] = 'info') {
-  const toast: ToastMessage = { id: _nextId++, message, type }
-  _listeners.forEach(fn => fn(toast))
-}
+import { type ToastMessage, toastListeners } from './toast-utils'
 
 const TYPE_COLORS: Record<string, string> = {
   info:    'rgba(79,142,247,0.92)',
@@ -31,8 +18,8 @@ export default function ToastContainer() {
         setToasts(prev => prev.filter(x => x.id !== t.id))
       }, 4000)
     }
-    _listeners.add(handler)
-    return () => { _listeners.delete(handler) }
+    toastListeners.add(handler)
+    return () => { toastListeners.delete(handler) }
   }, [])
 
   if (toasts.length === 0) return null

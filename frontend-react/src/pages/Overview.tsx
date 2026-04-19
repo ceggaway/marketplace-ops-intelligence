@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -93,6 +93,9 @@ export default function Overview() {
     refetchInterval: 120000,
   })
 
+  // Capture current time once per render cycle — keeps filterTrend pure
+  const nowMs = useMemo(() => Date.now(), [])
+
   if (isLoading) return <Spinner />
   if (isError)   return <ApiError message="The overview endpoint could not be loaded." />
   if (!data)     return <EmptyState title="Overview unavailable" message="No overview payload was returned by the backend." />
@@ -103,7 +106,7 @@ export default function Overview() {
   function filterTrend(points: { timestamp: string; value: number }[]) {
     if (timeRange === 'Last 7 Days') return points
     const hoursBack = timeRange === 'Last 6 Hours' ? 6 : 24
-    const cutoff = Date.now() - hoursBack * 3_600_000
+    const cutoff = nowMs - hoursBack * 3_600_000
     const filtered = points.filter(p => new Date(p.timestamp).getTime() >= cutoff)
     // Fall back to last N entries if data is older than the cutoff (e.g. infrequent scoring)
     if (filtered.length === 0 && points.length > 0) return points.slice(-hoursBack)

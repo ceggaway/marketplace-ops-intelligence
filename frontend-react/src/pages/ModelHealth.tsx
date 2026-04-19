@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Lightbulb, AlertTriangle, TrendingUp } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
@@ -8,7 +8,7 @@ import GlassCard from '../components/GlassCard'
 import Badge from '../components/Badge'
 import Spinner from '../components/Spinner'
 import SparkLine from '../components/SparkLine'
-import { showToast } from '../components/Toast'
+import { showToast } from '../components/toast-utils'
 
 // ── PSI circular gauge ──────────────────────────────────────────────────────
 function PsiCircle({ psi }: { psi: number }) {
@@ -107,6 +107,9 @@ export default function ModelHealth() {
   const { data: versions } = useQuery({ queryKey: ['modelVersions'], queryFn: api.modelVersions, staleTime: 60000 })
 
   const isLoading = lS || lR || lD
+
+  // Capture current time once — used to compute relative age labels (keeps render pure)
+  const nowMs = useMemo(() => Date.now(), [])
 
   const psi     = drift?.psi     ?? 0.0
   const m       = (modelStatus?.training_metrics ?? {}) as Record<string, number>
@@ -338,7 +341,7 @@ export default function ModelHealth() {
               : <Badge label="Never" color="rgba(255,255,255,0.28)" />
             }
             {modelStatus?.last_retrained_at && (() => {
-              const diffMs = Date.now() - new Date(modelStatus.last_retrained_at!).getTime()
+              const diffMs = nowMs - new Date(modelStatus.last_retrained_at!).getTime()
               const diffH  = Math.floor(diffMs / 3_600_000)
               const diffD  = Math.floor(diffH / 24)
               const label  = diffD >= 1 ? `${diffD}d ago` : diffH >= 1 ? `${diffH}h ago` : 'just now'

@@ -134,7 +134,7 @@ export default function AskOpsAI({ open, onClose }: Props) {
   // Scroll to bottom on new message
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+  }, [messages.length, loading])
 
   async function handleSend(text?: string) {
     const msg = (text ?? input).trim()

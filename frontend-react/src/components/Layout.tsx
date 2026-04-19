@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Alert } from '../lib/api'
 import { COLORS } from '../lib/utils'
-import { showToast } from './Toast'
+import { showToast } from './toast-utils'
 import ToastContainer from './Toast'
 import AskOpsAI from './AskOpsAI'
 
