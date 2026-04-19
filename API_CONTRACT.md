@@ -27,34 +27,45 @@ Fields that were planned but never shipped and are **not** present in the API:
 ```json
 {
   "kpis": {
-    "fulfilment_rate": 0.63,
-    "avg_delivery_time_min": 0.0,
-    "delayed_zones_count": 12,
-    "predicted_demand_next_hour": 1890,
     "high_risk_zone_count": 5,
-    "estimated_intervention_cost": 7.5,
+    "medium_risk_zone_count": 12,
+    "total_taxi_supply": 482,
+    "rapid_depletion_zones": 3,
+    "critical_actions_count": 7,
+    "model_psi": 0.05,
+    "minutes_since_last_run": 8,
     "as_of": "2026-04-17T04:00:00Z"
   },
   "demand_trend": [
-    { "timestamp": "2026-04-17T01:00:00Z", "value": 1320.0 }
+    { "timestamp": "2026-04-17T01:00:00Z", "value": 482.0 }
   ],
   "delay_trend": [
-    { "timestamp": "2026-04-17T01:00:00Z", "value": 0.0 }
+    { "timestamp": "2026-04-17T01:00:00Z", "value": 3.0 }
   ],
   "fulfilment_trend": [
-    { "timestamp": "2026-04-17T01:00:00Z", "value": 0.63 }
+    { "timestamp": "2026-04-17T01:00:00Z", "value": 5.0 }
   ],
   "alerts": [
     {
       "alert_id": "HIGH_RISK_ZONES",
       "zone_id": null,
       "severity": "high",
-      "message": "5 zones currently at high delay risk",
+      "message": "5 zones currently at high shortage risk",
       "created_at": "2026-04-17T04:00:00Z"
     }
   ]
 }
 ```
+
+**Trend field semantics** (names reflect legacy frontend field names; values are not delay/demand in the traditional sense):
+
+| field | actual metric | source field in pipeline.log |
+|---|---|---|
+| `demand_trend` | active taxi count (`supply_now`) per run | `supply_now` → fallback `total_taxi_count` |
+| `delay_trend` | rapid-depletion zone count per run | `rapid_depletion_zones` |
+| `fulfilment_trend` | high-risk zone count per run | `high_risk_zones_now` → fallback `flagged_zones` |
+
+These field names are kept for frontend compatibility. They do **not** represent delivery delay or passenger demand.
 
 ## GET `/zones`
 
@@ -95,17 +106,15 @@ Query params:
   "risk_level": "high",
   "recommendation": "Increase driver incentive",
   "explanation_tag": "rapid depletion + peak hour",
-  "demand_trend": [
-    { "timestamp": "2026-04-17T01:00:00Z", "value": 24.0 }
-  ],
-  "delay_trend": [
-    { "timestamp": "2026-04-17T01:00:00Z", "value": 0.0 }
-  ],
+  "demand_trend": [],
+  "delay_trend": [],
   "risk_score_history": [
     { "timestamp": "2026-04-17T01:00:00Z", "value": 0.85 }
   ]
 }
 ```
+
+`demand_trend` and `delay_trend` are always `[]` — per-zone taxi-count and delay history are not yet logged by the pipeline. `risk_score_history` is the only real per-zone time series, read from `zone_scores_history.jsonl`.
 
 ## GET `/recommendations`
 

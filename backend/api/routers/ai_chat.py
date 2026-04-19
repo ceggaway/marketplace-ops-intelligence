@@ -165,8 +165,9 @@ def chat(req: ChatRequest) -> ChatResponse:
                 messages.append({"role": msg.role, "content": content})
             messages.append({"role": "user", "content": req.message})
 
+        ai_model = os.environ.get("AI_MODEL", "claude-haiku-4-5-20251001")
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=ai_model,
             max_tokens=512,
             system=SYSTEM_PROMPT,
             messages=messages,
