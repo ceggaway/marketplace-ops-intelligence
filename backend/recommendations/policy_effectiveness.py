@@ -29,6 +29,16 @@ def _safe_float(value) -> float | None:
 def action_type_from_recommendation(priority: str, recommendation: str) -> str:
     """Derive a canonical action type from free-text recommendation content."""
     rec_lower = recommendation.lower()
+    if "ops team" in rec_lower or "ops alert" in rec_lower:
+        return "ops_alert"
+    if "rebalance" in rec_lower and ("incentive" in rec_lower or "bonus" in rec_lower):
+        return "rebalance_plus_incentive"
+    if "rebalance" in rec_lower:
+        return "rebalance"
+    if "incentive" in rec_lower or "bonus" in rec_lower:
+        return "incentive"
+    if "monitor" in rec_lower:
+        return "monitor"
     if "escalat" in rec_lower:
         return "escalation"
     if ("surge" in rec_lower or "fare" in rec_lower or "pricing" in rec_lower) and ("incentive" in rec_lower or "bonus" in rec_lower):
@@ -37,15 +47,11 @@ def action_type_from_recommendation(priority: str, recommendation: str) -> str:
         return "surge_plus_push"
     if "surge" in rec_lower or "fare" in rec_lower or "pricing" in rec_lower:
         return "surge_pricing"
-    if "incentive" in rec_lower or "bonus" in rec_lower:
-        return "driver_incentive"
     if "push" in rec_lower or "notification" in rec_lower or "notify" in rec_lower:
         return "push_notification"
-    if priority in ("medium", "low") and "monitor" in rec_lower:
-        return "monitor"
     if priority == "low" or "no action" in rec_lower:
         return "none"
-    return "push_notification"
+    return "monitor"
 
 
 def eta_bucket(eta_minutes: int | None) -> str:

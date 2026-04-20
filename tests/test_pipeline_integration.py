@@ -96,7 +96,13 @@ def test_run_batch_predictions_schema(tmp_path):
     predictions_path = tmp_path / "predictions.csv"
     assert predictions_path.exists()
     preds = pd.read_csv(predictions_path)
-    for col in ["zone_id", "zone_name", "region", "delay_risk_score", "risk_level"]:
+    for col in [
+        "zone_id", "zone_name", "region", "delay_risk_score", "depletion_risk_score",
+        "demand_pressure_score", "imbalance_score", "policy_action", "risk_level",
+        "predicted_shortage", "severity_bucket", "persistence_count", "neighbor_surplus",
+        "recommended_action", "action_reason", "estimated_action_cost",
+        "estimated_shortage_reduction", "budget_remaining",
+    ]:
         assert col in preds.columns, f"Missing column in predictions: {col}"
 
 
@@ -148,7 +154,7 @@ def test_run_batch_returns_meta_keys(tmp_path):
          patch("backend.scoring.batch_scorer.registry.get_active_version_meta", return_value=mock_meta):
         meta = run_batch(feature_df)
 
-    for key in ["run_id", "rows_scored", "failed_rows", "flagged_zones", "run_status"]:
+    for key in ["run_id", "rows_scored", "failed_rows", "flagged_zones", "run_status", "avg_demand_pressure_score", "avg_imbalance_score"]:
         assert key in meta, f"Missing meta key: {key}"
 
 
@@ -159,6 +165,21 @@ def test_generate_recommendations_row_count(tmp_path):
         {"zone_id": i, "zone_name": f"Zone{i}", "region": "Central",
          "delay_risk_score": 0.8 if i % 3 == 0 else 0.3,
          "risk_level": "high" if i % 3 == 0 else "low",
+         "depletion_risk_score": 0.8 if i % 3 == 0 else 0.3,
+         "demand_pressure_score": 0.7 if i % 3 == 0 else 0.2,
+         "imbalance_score": 0.75 if i % 3 == 0 else 0.15,
+         "imbalance_level": "high" if i % 3 == 0 else "low",
+         "policy_action": "intervention" if i % 3 == 0 else "watchlist",
+         "policy_reason": "heuristic baseline",
+         "predicted_shortage": 0.85 if i % 3 == 0 else 0.2,
+         "severity_bucket": "high" if i % 3 == 0 else "low",
+         "persistence_count": 2 if i % 3 == 0 else 0,
+         "neighbor_surplus": 1.2 if i % 3 == 0 else 0.0,
+         "recommended_action": "rebalance_plus_incentive" if i % 3 == 0 else "monitor",
+         "action_reason": "test reason",
+         "estimated_action_cost": 2.1 if i % 3 == 0 else 0.0,
+         "estimated_shortage_reduction": 0.25 if i % 3 == 0 else 0.0,
+         "budget_remaining": 10.0,
          "taxi_count": 50, "depletion_rate_1h": 0.2,
          "supply_vs_yesterday": 0.9, "explanation_tag": "test"}
         for i in range(1, 11)
@@ -172,19 +193,28 @@ def test_generate_recommendations_required_columns(tmp_path):
     preds = pd.DataFrame([{
         "zone_id": 1, "zone_name": "Orchard", "region": "Central",
         "delay_risk_score": 0.85, "risk_level": "high",
+        "depletion_risk_score": 0.85, "demand_pressure_score": 0.72, "imbalance_score": 0.78, "imbalance_level": "high",
+        "policy_action": "intervention", "policy_reason": "heuristic baseline",
         "taxi_count": 40, "depletion_rate_1h": 0.45,
         "supply_vs_yesterday": 0.60, "explanation_tag": "rain surge",
     }])
     with patch("backend.recommendations.engine.OUTPUTS_DIR", tmp_path):
         recs = generate_recommendations(preds)
-    for col in ["zone_id", "zone_name", "risk_level", "recommendation", "priority"]:
+    for col in ["zone_id", "zone_name", "risk_level", "recommendation", "priority", "depletion_risk_score", "demand_pressure_score", "imbalance_score", "policy_action"]:
         assert col in recs.columns, f"Missing recommendation column: {col}"
+    for col in ["predicted_shortage", "severity_bucket", "recommended_action", "estimated_action_cost"]:
+        assert col in recs.columns, f"Missing intervention column: {col}"
 
 
 def test_generate_recommendations_priority_values(tmp_path):
     preds = pd.DataFrame([
         {"zone_id": i, "zone_name": f"Z{i}", "region": "Central",
          "delay_risk_score": score, "risk_level": rl,
+         "depletion_risk_score": score, "demand_pressure_score": score, "imbalance_score": score,
+         "imbalance_level": rl, "policy_action": "watchlist", "policy_reason": "heuristic baseline",
+         "predicted_shortage": score, "severity_bucket": "severe" if score > 0.8 else ("moderate" if score > 0.4 else "low"),
+         "persistence_count": 2, "neighbor_surplus": 1.0, "recommended_action": "ops_alert" if score > 0.8 else ("incentive" if score > 0.4 else "monitor"),
+         "action_reason": "test", "estimated_action_cost": 1.0, "estimated_shortage_reduction": 0.1, "budget_remaining": 10.0,
          "taxi_count": 50, "depletion_rate_1h": 0.1,
          "supply_vs_yesterday": 1.0, "explanation_tag": ""}
         for i, (score, rl) in enumerate([

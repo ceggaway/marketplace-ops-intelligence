@@ -1,210 +1,211 @@
 # Marketplace Ops Intelligence
 
-Real-time taxi supply shortage monitoring for Singapore's 55 planning zones. A LightGBM model scores each zone every 5 minutes, predicts which areas are likely to run out of taxis in the next hour, and surfaces recommended interventions to an ops team through a React dashboard.
+Singapore taxi **supply depletion and imbalance intelligence** system.
 
-## What It Does
+This repo does not directly observe rider demand. Instead, it combines:
+- real-time taxi availability and depletion signals
+- public exogenous pressure proxies such as rainfall and congestion
+- zone-level imbalance scoring
+- heuristic intervention policy outputs for ops teams
 
-The model predicts `supply_shortage` — the probability that available taxi count in a zone will drop by more than 40% in the next hour. Scores are mapped to risk levels (high ≥ 0.70, medium ≥ 0.40, low < 0.40) and written to flat files that the FastAPI backend serves to the frontend.
+The current ML model is a **near-term supply depletion risk classifier**. It is one layer of the system, not the entire business problem.
 
-```
-LTA DataMall API (5-min taxi snapshots)
-  → feature engineering (depletion rates, lag features, weather, peak hours)
-  → LightGBM batch scoring (55 zones)
-  → predictions.csv + recommended_actions.csv
-  → FastAPI (/api/v1/*)
-  → React/Vite dashboard
-```
+## Problem Statement
 
-No database. No message queue. Everything is flat files in `data/outputs/`.
+The operational question is not simply "where will taxis run out?" and it is not "what is true rider demand?".
 
-## Stack
+This project currently aims to:
+1. estimate **near-term supply depletion risk**
+2. estimate **demand pressure** from public exogenous signals
+3. combine those into a **zone-level imbalance signal**
+4. support **intervention monitoring and future evaluation**
 
-| Layer | Technology |
-|---|---|
-| ML model | LightGBM (binary classifier) |
-| Backend API | FastAPI + Uvicorn |
-| Frontend | Vite + React + TypeScript |
-| Live data | LTA DataMall API (taxi availability) |
-| Weather | Open-Meteo API |
-| CI/CD | GitHub Actions |
+That framing is intentionally narrower and more honest than claiming direct demand estimation from taxi availability alone.
 
-## Repo Layout
+## System Architecture
 
-```
-marketplace-ops-intelligence/
-├── backend/
-│   ├── api/                # FastAPI app — routers, schemas
-│   ├── ingestion/          # LTA poller, weather, travel times
-│   ├── validation/         # row-level schema validation
-│   ├── preprocessing/      # feature engineering pipeline
-│   ├── training/           # model training + evaluation
-│   ├── registry/           # model version registry
-│   ├── promotion/          # 5-check promotion gate
-│   ├── scoring/            # batch inference engine
-│   ├── recommendations/    # ops action rules engine
-│   ├── monitoring/         # drift detection (PSI) + alerting
-│   └── rollback/           # rollback logic + audit log
-├── frontend-react/         # Vite/React/TypeScript dashboard
-│   └── src/
-│       ├── pages/          # Overview, ZoneRisk, ActionCenter, ModelHealth
-│       ├── components/     # GlassCard, SparkLine, Badge, etc.
-│       └── lib/            # API client (api.ts), utils
-├── scripts/
-│   ├── run_training.py     # train + register + promote
-│   ├── run_scoring.py      # score all zones + write outputs
-│   ├── run_monitoring.py   # drift check + alerting loop
-│   └── build_training_data.py  # build dataset from real poller data
-├── tests/                  # pytest suite
-├── .github/workflows/      # CI, daily batch, pipeline verify
-├── data/
-│   ├── outputs/            # predictions, recommendations, pipeline log
-│   ├── raw/                # LTA snapshots (gitignored)
-│   └── registry/           # registry.json + model artifacts (gitignored)
-└── API_CONTRACT.md
+```text
+LTA / public signals
+  → ingestion
+  → preprocessing
+  → depletion-risk model (LightGBM)
+  → demand-pressure proxy scoring
+  → imbalance scoring
+  → baseline intervention policy + recommendation engine
+  → FastAPI
+  → React dashboard
 ```
 
-## Dashboard Pages
+### Layer 1: Supply Availability And Depletion Risk
+- Taxi availability snapshots are ingested at zone level.
+- Feature engineering builds lag, rolling, baseline, and depletion signals.
+- A LightGBM classifier estimates the probability that available taxi count will drop materially in the next hour.
 
-**Overview** — KPI cards (high-risk zones, active supply, rapid depletion, actions needed, model PSI), top risk zones, system status, high-risk trend chart
+### Layer 2: Demand-Pressure Proxies
+- Time-of-day and day-of-week patterns
+- Weekend effects
+- Rainfall intensity
+- Traffic congestion
+- Placeholder train disruption flag interface
 
-**Zone Risk Monitor** — searchable/filterable table of all 55 zones with depletion rates, risk scores, and a Singapore map view. Click any zone for supply signals, key drivers, and recommended action.
+These are **pressure proxies**, not direct demand labels.
 
-**Action Center** — prioritised intervention queue (critical → high → medium → low) with per-zone detail panel, confidence scores, and action logging
+### Layer 3: Imbalance Scoring
+- Demand-pressure proxies are combined with live supply availability.
+- The repo now computes bounded imbalance scores using:
+  - ratio-style imbalance
+  - normalized-difference imbalance
 
-**Model Health** — AUC/Precision/Recall from model registry, PSI drift gauge, per-feature drift breakdown, run history table, one-click retraining
+### Layer 4: Baseline Intervention Policy
+- A heuristic policy maps depletion risk and imbalance into:
+  - `no_action`
+  - `watchlist`
+  - `intervention`
 
-## Model
+This is a transparent baseline policy. It is not an optimized decision engine.
 
-- **Type**: `LightGBMClassifier`
-- **Target**: `supply_shortage = 1` if taxi count drops > 40% in the next hour
-- **Key features**: `taxi_count`, `depletion_rate_1h`, `depletion_rate_3h`, `taxi_lag_24h`, `taxi_lag_168h`, `supply_vs_yesterday`, `is_peak_hour`, `is_raining`, `is_holiday`
-- **Risk thresholds**: high ≥ 0.70 · medium ≥ 0.40 · low < 0.40
-- **Promotion gate**: 5 checks — performance (F1 ≥ 0.50, AUC ≥ 0.65), regression vs active, schema compatibility, integration, stability
+### Layer 5: Monitoring And Evaluation
+- Batch scoring metadata
+- drift monitoring
+- registry / promotion / rollback
+- recommendation outcome logging
+- evaluation scaffolding for future treatment-vs-holdout comparisons
 
-The API field name for the score is `delay_risk_score` (preserved for frontend compatibility).
+## What Exists Today
 
-## Run Locally
+- ML pipeline for training and scoring
+- model registry and promotion gate
+- drift monitoring and operational health endpoints
+- real-time taxi availability ingestion
+- rainfall and congestion feature support
+- recommendation engine and ops dashboard
+- outcome logging for future policy learning
 
-### 1. Install
+## Data Sources
+
+Current and planned public-signal inputs:
+
+- **Taxi availability**: LTA DataMall taxi snapshots
+- **Weather**: Open-Meteo / rainfall features
+- **Traffic congestion**: LTA travel-time derived congestion ratio
+- **Calendar effects**: hour-of-day, weekday, weekend, holidays
+- **Train disruption flag**: placeholder interface exists; live connector still TODO
+
+## Models And Scores
+
+### Depletion Risk Model
+- Type: `LightGBMClassifier`
+- Current target: large next-hour drop in available taxi count
+- Existing compatibility field: `delay_risk_score`
+- Preferred internal meaning: **depletion risk score**
+
+### Demand Pressure Score
+- Transparent heuristic composite from exogenous conditions
+- Bounded in `[0, 1]`
+- Does **not** claim to measure true demand directly
+
+### Imbalance Score
+- Derived from demand-pressure score and supply availability
+- Intended as a descriptive decision-support signal
+- Not a causal or equilibrium estimate
+
+## Outputs
+
+Core batch outputs in `data/outputs/`:
+- `predictions.csv`
+- `flagged_zones.csv`
+- `recommended_actions.csv`
+- `score_distribution.json`
+- `zone_scores_history.jsonl`
+- `pipeline.log`
+
+Predictions now include additive descriptive fields such as:
+- `depletion_risk_score`
+- `demand_pressure_score`
+- `imbalance_score`
+- `imbalance_level`
+- `policy_action`
+
+Compatibility note:
+- `delay_risk_score` remains in the API and flat files because the frontend still depends on it.
+
+## Dashboard
+
+The React dashboard surfaces:
+- current depletion risk
+- supply-state and rapid-depletion monitoring
+- imbalance-aware recommendation context
+- model health and drift
+- reporting on recommendation outcomes
+
+## Running Locally
+
+### Install
 
 ```bash
-make install          # creates .venv and installs Python deps
-make install-frontend # installs Node deps in frontend-react/
+make install
+make install-frontend
 ```
 
-Requires Python 3.11+ and Node 18+.
-
-### 2. Train a model
+### Train
 
 ```bash
 make train
 ```
 
-Trains on 90 days of synthetic data, runs the promotion gate, and writes the active model to `data/registry/models/`.
-
-### 3. Score
+### Score
 
 ```bash
 make score
 ```
 
-Scores all 55 zones, writes `data/outputs/predictions.csv` and `data/outputs/recommended_actions.csv`.
-
-### 4. Start the API
+### Start API
 
 ```bash
 make api
-# → http://localhost:8000/api/v1
 ```
 
-### 5. Start the frontend
+### Start frontend
 
 ```bash
 make frontend
-# → http://localhost:5173
 ```
 
-The React dev server proxies `/api` to `localhost:8000` automatically.
+## Live / Continuous Operation
 
-## Live Data (optional)
-
-To run with real LTA taxi snapshots instead of synthetic data, set your API key:
-
-```bash
-export LTA_API_KEY=your_key_here
-```
-
-Start the background poller (fetches taxi data every 5 minutes):
+To keep outputs fresh in local demo or operational runs:
 
 ```bash
 make poller
-# logs → data/logs/poller.log
-```
-
-Start the scoring loop (scores zones every 5 minutes):
-
-```bash
 make monitor-loop
-# logs → data/logs/monitor.log
 ```
 
-Build a training dataset from real poller data (after 24+ hours of polling):
+`Retrain Model` creates a new model version. It does **not** refresh stale prediction outputs by itself.
 
-```bash
-python scripts/build_training_data.py
-make train
-```
+## Limitations
 
-## All Commands
+- Rider demand is **not directly observed**.
+- Demand pressure is approximated from public exogenous signals.
+- The intervention layer is still heuristic and partly rule-driven.
+- Outcome tracking exists, but causal evaluation is still scaffolding, not a finished experimentation system.
+- Some API fields still retain legacy naming for compatibility.
 
-```bash
-make install           # set up Python venv + deps
-make install-frontend  # set up Node deps
-make api               # start FastAPI on :8000
-make frontend          # start Vite dev server on :5173
-make train             # train + register + promote model
-make score             # run one batch scoring pass
-make monitor           # run one drift/monitoring check
-make monitor-loop      # start scoring loop (every 5 min, background)
-make poller            # start LTA data poller (background)
-make poller-once       # run one LTA poll then exit
-make test              # run pytest suite
-make clean             # wipe outputs, processed data, model artifacts
-```
+## Future Work
 
-## Tests
-
-```bash
-make test
-```
-
-Covers: validation, preprocessing, scoring, recommendations, API endpoints, drift monitoring, ingestion, rollback, model registry, and pipeline integration.
-
-## CI/CD
-
-| Workflow | Trigger | What it does |
-|---|---|---|
-| `ci.yml` | Every push / PR | Runs the full pytest suite |
-| `verify_pipeline.yml` | Push to main | End-to-end: trains, scores, verifies output schema |
-| `daily_batch.yml` | 01:00 SGT daily + manual | Trains if model missing, runs batch scoring, uploads outputs as artifact |
+- live train disruption connector
+- richer event and crowding signals
+- explicit treatment / holdout assignment in production policy flow
+- offline intervention evaluation and uplift-style policy comparison
+- optimized decision policy instead of heuristic baseline mapping
 
 ## API
 
-Base URL: `http://localhost:8000/api/v1`
+Base URL:
 
-| Endpoint | Description |
-|---|---|
-| `GET /overview` | KPI cards, trend data, active alerts |
-| `GET /zones` | All 55 zones with current risk scores |
-| `GET /zones/{id}` | Single zone detail + score history |
-| `GET /recommendations` | Prioritised action recommendations |
-| `GET /pipeline/latest-run` | Most recent scoring run metadata |
-| `GET /monitoring/drift` | Latest PSI drift report |
-| `GET /monitoring/history` | Recent run history |
-| `GET /model/status` | Active model version + training metrics |
-| `GET /model/versions` | All registered model versions |
-| `GET /health/services` | Pipeline component health check |
-| `GET /alerts` | Active operational alerts |
-| `POST /pipeline/retrain` | Trigger model retraining |
+```text
+http://localhost:8000/api/v1
+```
 
-Full schema: [API_CONTRACT.md](API_CONTRACT.md)
+The API remains compatibility-first. Existing clients continue to work while newer depletion / imbalance fields are added incrementally.
+
+Full schema notes: [API_CONTRACT.md](API_CONTRACT.md)

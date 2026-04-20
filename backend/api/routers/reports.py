@@ -92,7 +92,7 @@ def _psi_business_impact(psi: float, precision: Optional[float]) -> str:
         base = (
             f"PSI={psi:.3f} indicates significant data drift — the live distribution "
             "differs materially from training data. Model predictions are less reliable; "
-            "expect more false positives and missed shortages."
+            "expect more false positives and missed depletion-risk alerts."
         )
     elif level == "moderate":
         base = (

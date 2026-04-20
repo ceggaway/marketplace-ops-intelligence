@@ -6,21 +6,49 @@ Base URL:
 http://localhost:8000/api/v1
 ```
 
-This contract reflects the responses the backend returns today and is
-enforced through FastAPI `response_model`s.
+This contract reflects the backend responses as implemented today.
 
-## Notes On Compatibility
+## Compatibility Notes
 
-Some field names retain the earlier "delay risk" framing because the frontend
-still consumes them under those names.
+The repo has been reframed from "shortage prediction" to **supply depletion and imbalance intelligence**, but several wire fields are intentionally preserved for compatibility.
 
 Compatibility fields still in use:
-- `delay_risk_score` — the LightGBM shortage probability (0–1)
-- `fulfilment_rate` — ratio of zones that scored below the high-risk threshold
+- `delay_risk_score` — legacy field name for the model's **depletion risk** output
+- `demand_trend` — currently used as a supply trend series in the overview
+- `delay_trend` — currently used as a rapid-depletion trend series in the overview
+- `fulfilment_trend` — currently used as a high-risk zone count trend
 
-Fields that were planned but never shipped and are **not** present in the API:
-- ~~`predicted_demand_next_hour`~~ — removed
-- ~~`avg_delivery_time_min`~~ — removed
+Additive fields introduced by the refactor:
+- `depletion_risk_score`
+- `demand_pressure_score`
+- `demand_pressure_level`
+- `imbalance_score`
+- `imbalance_level`
+- `policy_action`
+- `policy_reason`
+
+The API does **not** claim to directly observe true rider demand.
+
+## Semantic Notes
+
+### Depletion Risk
+The core ML model estimates near-term **supply depletion risk** from supply-state features.
+
+### Demand Pressure
+Demand pressure is a proxy score derived from public exogenous signals such as:
+- hour of day
+- day of week / weekend
+- rainfall intensity
+- congestion
+- train disruption placeholder flag
+
+### Imbalance
+Imbalance is a descriptive combination of:
+- depletion risk
+- demand-pressure proxy score
+- current supply availability
+
+It is not a direct measurement of market equilibrium or true rider demand.
 
 ## GET `/overview`
 
@@ -45,33 +73,21 @@ Fields that were planned but never shipped and are **not** present in the API:
   "fulfilment_trend": [
     { "timestamp": "2026-04-17T01:00:00Z", "value": 5.0 }
   ],
-  "alerts": [
-    {
-      "alert_id": "HIGH_RISK_ZONES",
-      "zone_id": null,
-      "severity": "high",
-      "message": "5 zones currently at high shortage risk",
-      "created_at": "2026-04-17T04:00:00Z"
-    }
-  ]
+  "alerts": []
 }
 ```
 
-**Trend field semantics** (names reflect legacy frontend field names; values are not delay/demand in the traditional sense):
+Trend semantics:
 
-| field | actual metric | source field in pipeline.log |
-|---|---|---|
-| `demand_trend` | active taxi count (`supply_now`) per run | `supply_now` → fallback `total_taxi_count` |
-| `delay_trend` | rapid-depletion zone count per run | `rapid_depletion_zones` |
-| `fulfilment_trend` | high-risk zone count per run | `high_risk_zones_now` → fallback `flagged_zones` |
+| field | actual metric |
+|---|---|
+| `demand_trend` | active taxi supply by run |
+| `delay_trend` | rapid-depletion zone count by run |
+| `fulfilment_trend` | high depletion-risk zone count by run |
 
-These field names are kept for frontend compatibility. They do **not** represent delivery delay or passenger demand.
+These names are retained for compatibility.
 
 ## GET `/zones`
-
-Query params:
-- `risk_level` optional
-- `region` optional
 
 ```json
 [
@@ -84,6 +100,11 @@ Query params:
     "depletion_rate_1h": 0.45,
     "supply_vs_yesterday": 0.65,
     "delay_risk_score": 0.85,
+    "depletion_risk_score": 0.85,
+    "demand_pressure_score": 0.72,
+    "imbalance_score": 0.78,
+    "imbalance_level": "high",
+    "policy_action": "intervention",
     "risk_level": "high",
     "recommendation": "Increase driver incentive",
     "explanation_tag": "rapid depletion + peak hour"
@@ -93,33 +114,14 @@ Query params:
 
 ## GET `/zones/{zone_id}`
 
-```json
-{
-  "zone_id": 27,
-  "zone_name": "Orchard",
-  "region": "Central",
-  "taxi_count": 42,
-  "current_supply": 42,
-  "depletion_rate_1h": 0.45,
-  "supply_vs_yesterday": 0.65,
-  "delay_risk_score": 0.85,
-  "risk_level": "high",
-  "recommendation": "Increase driver incentive",
-  "explanation_tag": "rapid depletion + peak hour",
-  "demand_trend": [],
-  "delay_trend": [],
-  "risk_score_history": [
-    { "timestamp": "2026-04-17T01:00:00Z", "value": 0.85 }
-  ]
-}
-```
+Same core fields as `/zones`, plus:
+- `demand_trend`
+- `delay_trend`
+- `risk_score_history`
 
-`demand_trend` and `delay_trend` are always `[]` — per-zone taxi-count and delay history are not yet logged by the pipeline. `risk_score_history` is the only real per-zone time series, read from `zone_scores_history.jsonl`.
+`demand_trend` is currently per-zone taxi-count history, not direct demand history.
 
 ## GET `/recommendations`
-
-Query params:
-- `priority` optional
 
 ```json
 [
@@ -129,242 +131,53 @@ Query params:
     "region": "Central",
     "risk_level": "high",
     "delay_risk_score": 0.85,
-    "issue_detected": "Severe supply shortage forming in this zone",
-    "recommendation": "Increase driver incentive: +$1.50 bonus for next hour in this zone",
-    "expected_impact": "Expected to improve available supply within 30 min",
+    "depletion_risk_score": 0.85,
+    "demand_pressure_score": 0.72,
+    "imbalance_score": 0.78,
+    "imbalance_level": "high",
+    "policy_action": "intervention",
+    "policy_reason": "Heuristic baseline policy recommends intervention because depletion risk or imbalance is already high.",
+    "issue_detected": "Elevated depletion risk ...",
+    "recommendation": "Increase driver incentive ...",
     "confidence": 0.85,
-    "priority": "high",
-    "explanation_tag": "rapid depletion + peak hour",
-    "last_updated": "2026-04-17T04:00:00Z",
-    "eta_minutes": 20,
-    "intervention_window": "tight",
-    "adjacent_risk_zones": "Dhoby Ghaut, Newton",
-    "network_warning": "2 adjacent zones also at high risk — coordinated response recommended",
-    "root_cause": "weather",
-    "alternative_actions": "[{\"action\": \"Dynamic pricing surge\", \"cost\": \"low\", \"time_to_effect\": \"5 min\", \"viability\": \"high\"}]"
+    "priority": "high"
   }
 ]
 ```
 
-Engine v2 optional fields (all nullable):
-
-| field | type | description |
-|---|---|---|
-| `eta_minutes` | int | estimated minutes until intervention takes effect |
-| `intervention_window` | string | `"tight"` \| `"moderate"` \| `"flexible"` |
-| `adjacent_risk_zones` | string | comma-separated names of neighbouring high-risk zones |
-| `network_warning` | string | human-readable network-effect warning, if any |
-| `root_cause` | string | `"weather"` \| `"event"` \| `"peak_hour"` \| `"depletion"` \| `"supply_gap"` |
-| `alternative_actions` | string | JSON array of `{action, cost, time_to_effect, viability}` objects |
-
-## GET `/model/status`
-
-```json
-{
-  "active_version": "v1",
-  "promoted_at": "2026-04-16T20:00:00Z",
-  "last_retrained_at": "2026-04-16T19:30:00Z",
-  "training_metrics": {
-    "precision": 0.9,
-    "recall": 0.94,
-    "f1": 0.92,
-    "roc_auc": 0.95,
-    "train_rows": 25000,
-    "val_rows": 6000
-  },
-  "candidate_version": null,
-  "candidate_metrics": null
-}
-```
-
-## GET `/model/versions`
-
-```json
-[
-  {
-    "version_id": "v1",
-    "status": "active",
-    "trained_at": "2026-04-16T19:30:00Z",
-    "promoted_at": "2026-04-16T20:00:00Z",
-    "metrics": {
-      "f1": 0.92,
-      "roc_auc": 0.95
-    }
-  }
-]
-```
+Recommendation responses now include both:
+- the existing recommendation-engine outputs
+- additive baseline-policy / imbalance context
 
 ## GET `/pipeline/latest-run`
 
-```json
-{
-  "run_id": "abc123",
-  "timestamp": "2026-04-17T01:00:00Z",
-  "rows_scored": 1320,
-  "failed_rows": 0,
-  "flagged_zones": 12,
-  "drift_flag": false,
-  "rollback_status": false,
-  "run_status": "success",
-  "latency_ms": 500,
-  "model_version": "v1",
-  "psi": 0.05,
-  "logged_at": "2026-04-17T01:00:01Z",
-  "avg_delay_min": 8.5,
-  "fulfilment_rate": 0.72,
-  "total_taxi_count": 15391,
-  "supply_now": 482,
-  "high_risk_zones_now": 12,
-  "rapid_depletion_zones": 3
-}
-```
+Includes the existing run metadata plus optional additive fields:
+- `avg_demand_pressure_score`
+- `avg_imbalance_score`
 
-`total_taxi_count` is the sum across all scored rows (multi-zone, multi-snapshot) — it is **not** a real-time taxi count. Use `supply_now` for the current active taxi count in the snapshot.
+These are descriptive summary metrics from the latest scoring run.
+
+## GET `/model/status`
+
+Unchanged shape. This endpoint describes training/registry state, not imbalance or decision performance.
+
+## GET `/model/versions`
+
+Unchanged route. Registry lineage is filtered to show meaningful recent versions by default.
 
 ## GET `/monitoring/drift`
 
-```json
-{
-  "run_id": "abc123",
-  "timestamp": "2026-04-17T01:00:00Z",
-  "psi": 0.05,
-  "drift_flag": false,
-  "drift_level": "stable",
-  "reference_mean": 0.30,
-  "current_mean": 0.32,
-  "reference_std": 0.15,
-  "current_std": 0.16,
-  "reference_n": 1000,
-  "current_n": 1000,
-  "feature_drift": {
-    "taxi_count": {
-      "psi": 0.03,
-      "drift_level": "stable",
-      "reference_mean": 48.2,
-      "current_mean": 47.1,
-      "reference_std": 18.4,
-      "current_std": 19.0
-    },
-    "depletion_rate_1h": {
-      "psi": 0.01,
-      "drift_level": "stable",
-      "reference_mean": 0.12,
-      "current_mean": 0.13,
-      "reference_std": 0.09,
-      "current_std": 0.10
-    }
-  }
-}
-```
+Unchanged route. Drift currently monitors the model-score distribution and selected feature distributions.
 
-`feature_drift` is `null` on the first scoring run (no reference snapshot yet).
+## Important Non-Claims
 
-## GET `/monitoring/history`
+The current API does **not** provide:
+- true rider demand
+- causal intervention effectiveness
+- optimized policy selection
 
-Query params:
-- `n` optional (default 20) — number of recent runs to return
-
-Returns a list of `PipelineRun` (same shape as `/pipeline/latest-run`).
-
-## GET `/alerts`
-
-Returns a list of active alerts, merged from `alerts.log` and on-the-fly
-pipeline checks. Deduplicated by `alert_id`.
-
-```json
-[
-  {
-    "alert_id": "DRIFT_ALERT",
-    "zone_id": null,
-    "severity": "high",
-    "message": "Prediction drift detected — PSI=0.31 (features: taxi_count)",
-    "created_at": "2026-04-17T04:00:00Z"
-  }
-]
-```
-
-`severity` values: `"high"` | `"medium"` | `"info"`
-
-Known `alert_id` values emitted by the system:
-
-| alert_id | severity | trigger |
-|---|---|---|
-| `DRIFT_ALERT` | high | PSI > 0.25 |
-| `DRIFT_WARNING` | medium | PSI 0.10–0.25 |
-| `ROLLBACK_OCCURRED` | high | model rolled back |
-| `ROLLBACK_FAILED` | high | rollback attempt failed |
-| `HIGH_FAILED_ROWS` | medium | >10% rows failed validation |
-
-## POST `/ai/chat`
-
-Requires `ANTHROPIC_API_KEY` in the server environment. Without a key the
-endpoint returns the assembled ops context as a plain-text reply so the
-frontend can show something useful in development.
-
-Request body:
-
-```json
-{
-  "message": "Which zones are at highest risk right now?",
-  "history": [
-    { "role": "user",      "content": "previous turn" },
-    { "role": "assistant", "content": "previous reply" }
-  ]
-}
-```
-
-Response:
-
-```json
-{ "reply": "Orchard and Raffles Place are at highest risk with scores above 0.85..." }
-```
-
-`history` is optional (default `[]`). Messages are prepended with a live ops
-context snapshot (zone counts, top-risk zones, latest drift, recommendations)
-so the AI can answer questions about the current pipeline state.
-
-## GET `/health/services`
-
-Returns the health of each logical service, based on output file freshness.
-Default stale threshold: 1 hour (`SERVICE_STALE_SECONDS` env var, default `3600`).
-Files older than the threshold are marked `degraded`; missing files are `down`.
-
-```json
-{
-  "services": [
-    {
-      "name": "Prediction API",
-      "status": "ok",
-      "detail": null,
-      "last_updated": "2026-04-17T03:55:00Z"
-    },
-    {
-      "name": "Data Pipeline",
-      "status": "degraded",
-      "detail": "Last updated 145 min ago",
-      "last_updated": "2026-04-17T01:35:00Z"
-    },
-    {
-      "name": "Feature Store",
-      "status": "ok",
-      "detail": null,
-      "last_updated": "2026-04-17T03:55:00Z"
-    },
-    {
-      "name": "Model Serving",
-      "status": "ok",
-      "detail": "Active: v1",
-      "last_updated": null
-    },
-    {
-      "name": "Drift Monitor",
-      "status": "down",
-      "detail": "Output file not found",
-      "last_updated": null
-    }
-  ],
-  "checked_at": "2026-04-17T04:00:00Z"
-}
-```
-
-`status` values: `"ok"` | `"degraded"` | `"down"`
+It provides:
+- depletion-risk estimates
+- demand-pressure proxy signals
+- imbalance scores
+- heuristic intervention support

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowUpRight,
-  Zap, CheckCircle, BarChart2,
+  Zap, CheckCircle,
   Car, TrendingDown, ShieldAlert, ListChecks, Activity as ActivityIcon,
 } from 'lucide-react'
 import {
@@ -145,14 +145,14 @@ export default function Overview() {
       ? {
           icon: ShieldAlert,
           iconColor: COLORS.high,
-          title: `${highRisk} zone${highRisk !== 1 ? 's' : ''} at high shortage risk right now`,
-          desc: 'Zones where the model predicts >70% chance of supply drop in the next hour. Prioritize these first.',
+          title: `${highRisk} zone${highRisk !== 1 ? 's' : ''} at high depletion risk right now`,
+          desc: 'Zones where the depletion model predicts a high chance of supply drop in the next hour. Prioritize these first.',
           badge: { label: 'Immediate Action', color: COLORS.high },
         }
       : {
           icon: CheckCircle,
           iconColor: COLORS.low,
-          title: 'No zones at high shortage risk',
+          title: 'No zones at high depletion risk',
           desc: `All 55 zones are currently low or medium risk. ${depletion > 0 ? `Watch the ${depletion} depleting zone${depletion !== 1 ? 's' : ''} for early signs of escalation.` : 'Supply is stable across all zones.'}`,
           badge: { label: 'Stable', color: COLORS.low },
         },
@@ -163,7 +163,7 @@ export default function Overview() {
         ? `${depletion} zone${depletion !== 1 ? 's' : ''} losing supply at >30%/hr`
         : 'No zones with rapid supply depletion',
       desc: depletion > 0
-        ? 'Rapid depletion is the earliest leading indicator of shortage. Act within 2 hours to pre-position drivers.'
+        ? 'Rapid depletion is the earliest leading indicator of imbalance risk. Act within 2 hours to pre-position drivers.'
         : 'Depletion rates are normal across all zones. No pre-positioning required.',
       badge: { label: depletion > 0 ? 'Time-Sensitive' : 'Normal', color: depletion > 3 ? COLORS.high : depletion > 0 ? COLORS.medium : COLORS.low },
     },
@@ -188,7 +188,7 @@ export default function Overview() {
   const actionText = topAlert
     ? topAlert.message
     : highRisk > 0
-      ? `${highRisk} zone${highRisk !== 1 ? 's' : ''} at high shortage risk — prioritize driver reallocation in the highest-risk areas immediately.`
+      ? `${highRisk} zone${highRisk !== 1 ? 's' : ''} at high depletion risk — prioritize driver reallocation in the highest-risk areas immediately.`
       : medRisk > 0
         ? `${medRisk} zone${medRisk !== 1 ? 's' : ''} at medium risk — monitor for escalation and pre-position drivers near depleting zones.`
         : 'All zones at low risk — supply is stable across Singapore. Continue standard monitoring cadence.'
@@ -480,7 +480,7 @@ export default function Overview() {
             <div>
               <div style={SECTION_LABEL as React.CSSProperties}>High-Risk Zone Count Trend</div>
               <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.40)', fontWeight: 300, marginTop: -6, marginBottom: 10 }}>
-                Number of zones at high shortage risk per scoring run
+                Number of zones at high depletion risk per scoring run
               </div>
             </div>
             <div ref={timeRangeRef} style={{ position: 'relative' }}>
@@ -532,9 +532,18 @@ export default function Overview() {
             </div>
           </div>
 
-          <ResponsiveContainer width="100%" height={160}>
-            <ComposedChart data={trendData} margin={{ top: 4, right: 6, bottom: 0, left: -16 }}>
-              <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.28)', fontFamily: 'Inter' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+          <ResponsiveContainer width="100%" height={172}>
+            <ComposedChart data={trendData} margin={{ top: 4, right: 22, bottom: 10, left: -8 }}>
+              <XAxis
+                dataKey="time"
+                tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.28)', fontFamily: 'Inter' }}
+                tickLine={false}
+                axisLine={false}
+                interval="preserveStartEnd"
+                tickMargin={8}
+                minTickGap={24}
+                padding={{ left: 4, right: 12 }}
+              />
               <YAxis
                 domain={[0, 'auto']}
                 allowDecimals={false}
@@ -542,7 +551,8 @@ export default function Overview() {
                 tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.28)', fontFamily: 'Inter' }}
                 tickLine={false}
                 axisLine={false}
-                width={28}
+                tickMargin={8}
+                width={34}
               />
               <Tooltip
                 contentStyle={TOOLTIP_STYLE}
@@ -652,14 +662,6 @@ export default function Overview() {
             ))}
           </div>
 
-          <button
-            className="btn-glass"
-            onClick={() => navigate('/health')}
-            style={{ fontSize: '0.70rem', padding: '6px 10px', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
-          >
-            <BarChart2 size={12} strokeWidth={1.75} />
-            View Model Health
-          </button>
         </GlassCard>
       </div>
 
@@ -684,7 +686,7 @@ export default function Overview() {
             {actionText}
           </div>
           <div style={{ fontSize: '0.70rem', fontWeight: 300, color: 'rgba(255,255,255,0.40)' }}>
-            Based on current shortage-risk scores and live supply signals.
+            Based on current depletion-risk scores, demand-pressure proxies, and live supply signals.
           </div>
         </div>
 
@@ -725,12 +727,6 @@ export default function Overview() {
           )}
         </div>
 
-        {/* Right: CTA */}
-        <div style={{ flexShrink: 0 }}>
-          <button className="btn-primary" onClick={() => navigate('/actions')}>
-            Go to Action Center <ArrowUpRight size={14} strokeWidth={2} />
-          </button>
-        </div>
       </GlassCard>
 
     </div>

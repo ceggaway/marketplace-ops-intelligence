@@ -1,0 +1,469 @@
+Ang Mo Kio:
+  - Bishan
+  - Hougang
+  - Seletar
+  - Serangoon
+  - Toa Payoh
+  - Bukit Brown
+Bedok:
+  - Geylang
+  - Marine Parade
+  - Paya Lebar
+  - Tampines
+Bishan:
+  - Ang Mo Kio
+  - Newton
+  - Novena
+  - Serangoon
+  - Toa Payoh
+  - Bukit Brown
+Boon Lay:
+  - Bukit Batok
+  - Jurong East
+  - Jurong West
+  - Pioneer
+  - Tengah
+  - Tengah Park
+Bukit Batok:
+  - Boon Lay
+  - Bukit Panjang
+  - Choa Chu Kang
+  - Clementi
+  - Jurong East
+  - Jurong West
+  - Tengah
+  - Tengah Park
+Bukit Merah:
+  - Buona Vista
+  - Downtown Core
+  - Marina South
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - Outram
+  - Queenstown
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Southern Islands
+  - Straits View
+  - Tanglin
+Bukit Panjang:
+  - Bukit Batok
+  - Choa Chu Kang
+  - Mandai
+  - Sungei Kadut
+Bukit Timah:
+  - Buona Vista
+  - Clementi
+  - Newton
+  - Orchard
+  - Queenstown
+  - Tanglin
+  - Bukit Brown
+Buona Vista:
+  - Bukit Merah
+  - Bukit Timah
+  - Clementi
+  - Orchard
+  - Queenstown
+  - River Valley
+  - Tanglin
+  - Bukit Brown
+Changi:
+  - Pasir Ris
+Choa Chu Kang:
+  - Bukit Batok
+  - Bukit Panjang
+  - Sungei Kadut
+  - Tengah
+  - Tengah Park
+Clementi:
+  - Bukit Batok
+  - Bukit Timah
+  - Buona Vista
+  - Jurong East
+  - Queenstown
+Downtown Core:
+  - Bukit Merah
+  - Kallang
+  - Marina East
+  - Marina South
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - Outram
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Southern Islands
+  - Straits View
+Geylang:
+  - Bedok
+  - Hougang
+  - Kallang
+  - Marine Parade
+  - Paya Lebar
+  - Rochor
+  - Serangoon
+  - Toa Payoh
+Hougang:
+  - Ang Mo Kio
+  - Geylang
+  - Paya Lebar
+  - Sengkang
+  - Serangoon
+  - Toa Payoh
+Jurong East:
+  - Boon Lay
+  - Bukit Batok
+  - Clementi
+  - Jurong West
+Jurong West:
+  - Boon Lay
+  - Bukit Batok
+  - Jurong East
+  - Pioneer
+  - Tengah
+  - Tengah Park
+Kallang:
+  - Downtown Core
+  - Geylang
+  - Marina East
+  - Marina South
+  - Marine Parade
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - Outram
+  - Paya Lebar
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Straits View
+  - Tanglin
+  - Toa Payoh
+Lim Chu Kang:
+  - Sungei Kadut
+Mandai:
+  - Bukit Panjang
+  - Simpang
+  - Sungei Kadut
+  - Woodlands
+  - Yishun
+Marina East:
+  - Downtown Core
+  - Kallang
+  - Marina South
+  - Marine Parade
+  - Museum
+  - Outram
+  - Paya Lebar
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Straits View
+Marina South:
+  - Bukit Merah
+  - Downtown Core
+  - Kallang
+  - Marina East
+  - Museum
+  - Outram
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Southern Islands
+  - Straits View
+Marine Parade:
+  - Bedok
+  - Geylang
+  - Kallang
+  - Marina East
+  - Paya Lebar
+Museum:
+  - Bukit Merah
+  - Downtown Core
+  - Kallang
+  - Marina East
+  - Marina South
+  - Newton
+  - Novena
+  - Orchard
+  - Outram
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Straits View
+  - Tanglin
+  - Toa Payoh
+Newton:
+  - Bishan
+  - Bukit Merah
+  - Bukit Timah
+  - Downtown Core
+  - Kallang
+  - Museum
+  - Novena
+  - Orchard
+  - Outram
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Tanglin
+  - Toa Payoh
+  - Bukit Brown
+Novena:
+  - Bishan
+  - Bukit Merah
+  - Downtown Core
+  - Kallang
+  - Museum
+  - Newton
+  - Orchard
+  - Outram
+  - River Valley
+  - Rochor
+  - Serangoon
+  - Singapore River
+  - Tanglin
+  - Toa Payoh
+  - Bukit Brown
+Orchard:
+  - Bukit Merah
+  - Bukit Timah
+  - Buona Vista
+  - Downtown Core
+  - Kallang
+  - Museum
+  - Newton
+  - Novena
+  - Outram
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Tanglin
+  - Toa Payoh
+  - Bukit Brown
+Outram:
+  - Bukit Merah
+  - Downtown Core
+  - Kallang
+  - Marina East
+  - Marina South
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Southern Islands
+  - Straits View
+  - Tanglin
+Pasir Ris:
+  - Changi
+  - Tampines
+Paya Lebar:
+  - Bedok
+  - Geylang
+  - Hougang
+  - Kallang
+  - Marina East
+  - Marine Parade
+  - Rochor
+  - Serangoon
+  - Toa Payoh
+Pioneer:
+  - Boon Lay
+  - Jurong West
+Punggol:
+  - Seletar
+  - Sengkang
+Queenstown:
+  - Bukit Merah
+  - Bukit Timah
+  - Buona Vista
+  - Clementi
+  - River Valley
+  - Tanglin
+River Valley:
+  - Bukit Merah
+  - Buona Vista
+  - Downtown Core
+  - Kallang
+  - Marina East
+  - Marina South
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - Outram
+  - Queenstown
+  - Rochor
+  - Singapore River
+  - Southern Islands
+  - Straits View
+  - Tanglin
+Rochor:
+  - Bukit Merah
+  - Downtown Core
+  - Geylang
+  - Kallang
+  - Marina East
+  - Marina South
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - Outram
+  - Paya Lebar
+  - River Valley
+  - Singapore River
+  - Straits View
+  - Tanglin
+  - Toa Payoh
+Seletar:
+  - Ang Mo Kio
+  - Punggol
+  - Sengkang
+  - Yishun
+Sembawang:
+  - Simpang
+  - Woodlands
+  - Yishun
+Sengkang:
+  - Hougang
+  - Punggol
+  - Seletar
+  - Serangoon
+Serangoon:
+  - Ang Mo Kio
+  - Bishan
+  - Geylang
+  - Hougang
+  - Novena
+  - Paya Lebar
+  - Sengkang
+  - Toa Payoh
+Simpang:
+  - Mandai
+  - Sembawang
+  - Sungei Kadut
+  - Woodlands
+  - Yishun
+Singapore River:
+  - Bukit Merah
+  - Downtown Core
+  - Kallang
+  - Marina East
+  - Marina South
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - Outram
+  - River Valley
+  - Rochor
+  - Southern Islands
+  - Straits View
+  - Tanglin
+Southern Islands:
+  - Bukit Merah
+  - Downtown Core
+  - Marina South
+  - Outram
+  - River Valley
+  - Singapore River
+  - Straits View
+Straits View:
+  - Bukit Merah
+  - Downtown Core
+  - Kallang
+  - Marina East
+  - Marina South
+  - Museum
+  - Outram
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Southern Islands
+Sungei Kadut:
+  - Bukit Panjang
+  - Choa Chu Kang
+  - Lim Chu Kang
+  - Mandai
+  - Simpang
+  - Woodlands
+Tampines:
+  - Bedok
+  - Pasir Ris
+Tanglin:
+  - Bukit Merah
+  - Bukit Timah
+  - Buona Vista
+  - Kallang
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - Outram
+  - Queenstown
+  - River Valley
+  - Rochor
+  - Singapore River
+  - Bukit Brown
+Tengah:
+  - Boon Lay
+  - Bukit Batok
+  - Choa Chu Kang
+  - Jurong West
+  - Tengah Park
+Toa Payoh:
+  - Ang Mo Kio
+  - Bishan
+  - Geylang
+  - Hougang
+  - Kallang
+  - Museum
+  - Newton
+  - Novena
+  - Orchard
+  - Paya Lebar
+  - Rochor
+  - Serangoon
+  - Bukit Brown
+Tuas:
+  - Western Water
+Western Islands: []
+Western Water:
+  - Tuas
+Woodlands:
+  - Mandai
+  - Sembawang
+  - Simpang
+  - Sungei Kadut
+Yishun:
+  - Mandai
+  - Seletar
+  - Sembawang
+  - Simpang
+Bukit Brown:
+  - Ang Mo Kio
+  - Bishan
+  - Bukit Timah
+  - Buona Vista
+  - Newton
+  - Novena
+  - Orchard
+  - Tanglin
+  - Toa Payoh
+Tengah Park:
+  - Boon Lay
+  - Bukit Batok
+  - Choa Chu Kang
+  - Jurong West
+  - Tengah

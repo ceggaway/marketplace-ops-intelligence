@@ -53,6 +53,22 @@ class ZoneSummary(BaseModel):
     depletion_rate_1h: float
     supply_vs_yesterday: float
     delay_risk_score: float
+    depletion_risk_score: Optional[float] = None
+    demand_pressure_score: Optional[float] = None
+    demand_pressure_level: Optional[str] = None
+    imbalance_score: Optional[float] = None
+    imbalance_level: Optional[str] = None
+    policy_action: Optional[str] = None
+    policy_reason: Optional[str] = None
+    predicted_shortage: Optional[float] = None
+    severity_bucket: Optional[str] = None
+    persistence_count: Optional[int] = None
+    neighbor_surplus: Optional[float] = None
+    recommended_action: Optional[str] = None
+    action_reason: Optional[str] = None
+    estimated_action_cost: Optional[float] = None
+    estimated_shortage_reduction: Optional[float] = None
+    budget_remaining: Optional[float] = None
     risk_level: Literal["high", "medium", "low"]
     recommendation: str
     explanation_tag: str
@@ -104,6 +120,21 @@ class RecommendationCard(BaseModel):
     winning_reason: Optional[str] = None
     constraints_triggered: Optional[str] = None
     alternative_actions: Optional[str] = None
+    depletion_risk_score: Optional[float] = None
+    demand_pressure_score: Optional[float] = None
+    imbalance_score: Optional[float] = None
+    imbalance_level: Optional[str] = None
+    policy_action: Optional[str] = None
+    policy_reason: Optional[str] = None
+    predicted_shortage: Optional[float] = None
+    severity_bucket: Optional[str] = None
+    persistence_count: Optional[int] = None
+    neighbor_surplus: Optional[float] = None
+    recommended_action: Optional[str] = None
+    action_reason: Optional[str] = None
+    estimated_action_cost: Optional[float] = None
+    estimated_shortage_reduction: Optional[float] = None
+    budget_remaining: Optional[float] = None
 
 
 class ModelStatus(BaseModel):
@@ -142,6 +173,8 @@ class PipelineRun(BaseModel):
     supply_now: Optional[int] = None           # taxis in current zone snapshot (vs total rows scored)
     high_risk_zones_now: Optional[int] = None
     rapid_depletion_zones: Optional[int] = None
+    avg_demand_pressure_score: Optional[float] = None
+    avg_imbalance_score: Optional[float] = None
 
 
 class DriftReport(BaseModel):

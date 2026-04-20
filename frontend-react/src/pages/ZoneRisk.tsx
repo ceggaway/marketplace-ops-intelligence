@@ -614,10 +614,10 @@ export default function ZoneRisk() {
           {counts.high > 0 ? (
             <>
               <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'rgba(255,255,255,0.90)', lineHeight: 1.4, marginBottom: 8 }}>
-                {counts.high} zone{counts.high !== 1 ? 's' : ''} at high shortage risk — immediate action needed
+                {counts.high} zone{counts.high !== 1 ? 's' : ''} at high depletion risk — immediate action needed
               </div>
               <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.45)', lineHeight: 1.5, marginBottom: 16 }}>
-                High-risk zones show elevated supply stress and rapid depletion. Targeted interventions in these areas can reduce overall shortage exposure.
+                High-risk zones show elevated supply stress and rapid depletion. Targeted interventions in these areas can reduce overall imbalance exposure.
               </div>
             </>
           ) : counts.medium > 0 ? (
@@ -635,21 +635,10 @@ export default function ZoneRisk() {
                 All {totalZones} zones at low risk — supply is stable
               </div>
               <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.45)', lineHeight: 1.5, marginBottom: 16 }}>
-                No shortage risk detected across all zones. Continue monitoring depletion rates as an early warning signal.
+                No depletion risk detected across all zones. Continue monitoring depletion rates as an early warning signal.
               </div>
             </>
           )}
-          <button
-            onClick={() => navigate('/actions')}
-            style={{
-              background: 'none', border: 'none', padding: 0,
-              color: COLORS.primary, fontSize: '0.78rem', fontWeight: 600,
-              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
-              display: 'flex', alignItems: 'center', gap: 4,
-            }}
-          >
-            View Action Center →
-          </button>
         </GlassCard>
 
         {/* RISK DISTRIBUTION */}

@@ -3,8 +3,12 @@ Batch Inference Engine
 ======================
 Scores the latest zone-level taxi availability data using the active model.
 
-Model output: shortage_probability ∈ [0, 1]
+Primary model output: depletion_risk_score ∈ [0, 1]
     Probability that available taxi count will drop by >40% in the next hour.
+
+Additional descriptive layers:
+    demand_pressure_score – exogenous proxy index for rider-demand pressure
+    imbalance_score       – combined supply/depletion and pressure signal
 
 Risk levels:
     high   – score ≥ 0.70  → intervention required
@@ -26,7 +30,22 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from backend.intervention import load_intervention_config, load_zone_adjacency
+from backend.intervention.action_selector import select_action
+from backend.intervention.constraints import compute_neighbor_surplus
+from backend.intervention.state_tracker import (
+    apply_action,
+    get_last_actions,
+    get_remaining_budget,
+    load_state,
+    save_state,
+    update_persistence,
+)
+from backend.modeling.demand_pressure import classify_pressure_level, score_demand_pressure
+from backend.modeling.imbalance import classify_imbalance_level, composite_imbalance_score
+from backend.modeling.shortage import compute_predicted_shortage
 from backend.registry import model_registry as registry
+from backend.recommendations.baseline_policy import baseline_policy_reason, classify_policy_action
 
 import os
 
@@ -34,7 +53,7 @@ OUTPUTS_DIR = Path("data/outputs")
 
 # Risk classification thresholds — configurable via environment so ops can
 # tune sensitivity without code changes (e.g., lower RISK_HIGH_THRESHOLD
-# during monsoon season to catch earlier-stage shortages).
+# during monsoon season to catch earlier-stage depletion risk).
 RISK_HIGH_THRESHOLD = float(os.environ.get("RISK_HIGH_THRESHOLD", "0.70"))
 RISK_MED_THRESHOLD  = float(os.environ.get("RISK_MED_THRESHOLD",  "0.40"))
 
@@ -63,6 +82,7 @@ def run_batch(feature_df: pd.DataFrame) -> dict:
 
     result_df = clean_df[["zone_id", "zone_name", "region", "timestamp"]].copy()
     result_df["delay_risk_score"]    = probs.round(4)   # field name kept for API compatibility
+    result_df["depletion_risk_score"] = result_df["delay_risk_score"]
     result_df["risk_level"]          = result_df["delay_risk_score"].apply(_assign_risk_level)
     result_df["taxi_count"]          = clean_df["taxi_count"].values
     result_df["depletion_rate_1h"]   = clean_df.get(
@@ -72,6 +92,47 @@ def run_batch(feature_df: pd.DataFrame) -> dict:
         "supply_vs_yesterday", pd.Series(np.nan, index=clean_df.index)
     ).values
     result_df["explanation_tag"]     = [_generate_explanation_tag(row) for _, row in clean_df.iterrows()]
+    result_df["demand_pressure_score"] = score_demand_pressure(clean_df).round(4)
+    result_df["demand_pressure_level"] = result_df["demand_pressure_score"].apply(classify_pressure_level)
+    supply_baseline = clean_df.get("taxi_lag_24h", clean_df["taxi_count"])
+    result_df["baseline_supply"] = pd.Series(supply_baseline, index=clean_df.index).fillna(clean_df["taxi_count"]).astype(float).round(4)
+    result_df["imbalance_score"] = [
+        composite_imbalance_score(dp, supply, baseline)
+        for dp, supply, baseline in zip(
+            result_df["demand_pressure_score"],
+            result_df["taxi_count"],
+            result_df["baseline_supply"],
+        )
+    ]
+    result_df["imbalance_score"] = result_df["imbalance_score"].round(4)
+    result_df["imbalance_level"] = result_df["imbalance_score"].apply(classify_imbalance_level)
+    result_df["policy_action"] = [
+        classify_policy_action(dep, imb, int(supply))
+        for dep, imb, supply in zip(
+            result_df["depletion_risk_score"],
+            result_df["imbalance_score"],
+            result_df["taxi_count"],
+        )
+    ]
+    result_df["policy_reason"] = [
+        baseline_policy_reason(dep, imb, int(supply))
+        for dep, imb, supply in zip(
+            result_df["depletion_risk_score"],
+            result_df["imbalance_score"],
+            result_df["taxi_count"],
+        )
+    ]
+    result_df["predicted_shortage"] = [
+        compute_predicted_shortage(dp, supply, dep, baseline)
+        for dp, supply, dep, baseline in zip(
+            result_df["demand_pressure_score"],
+            result_df["taxi_count"],
+            result_df["depletion_risk_score"],
+            result_df["baseline_supply"],
+        )
+    ]
+    result_df["predicted_shortage"] = result_df["predicted_shortage"].round(4)
+    _apply_intervention_outputs(result_df, run_start)
 
     result_df.to_csv(OUTPUTS_DIR / "predictions.csv", index=False)
 
@@ -103,7 +164,7 @@ def run_batch(feature_df: pd.DataFrame) -> dict:
     high_risk_mask   = result_df["delay_risk_score"] >= RISK_HIGH_THRESHOLD
     total            = max(len(result_df), 1)
 
-    # fulfilment_rate: fraction of zones not at high shortage risk
+    # fulfilment_rate: fraction of zones not at high depletion risk
     fulfilment_rate  = round(1.0 - float(high_risk_mask.sum()) / total, 4)
 
     # avg_delay_min: estimated extra wait time for flagged zones, derived from
@@ -146,6 +207,8 @@ def run_batch(feature_df: pd.DataFrame) -> dict:
         high_risk_zones_now=high_risk_zones_now,
         supply_now=supply_now,
         rapid_depletion_zones=rapid_depletion_zones,
+        avg_demand_pressure_score=round(float(result_df["demand_pressure_score"].mean()), 4),
+        avg_imbalance_score=round(float(result_df["imbalance_score"].mean()), 4),
         feature_nan_count=feature_nan_count,
     )
     return run_meta
@@ -207,8 +270,8 @@ def _assign_risk_level(score: float) -> str:
 
 def _generate_explanation_tag(row: pd.Series) -> str:
     """
-    Generate a plain-English explanation of why the shortage risk is elevated.
-    Based on directly observed supply signals — no inferred demand.
+    Generate a plain-English explanation of why depletion risk is elevated.
+    Based on directly observed supply signals rather than inferred demand.
     """
     tags = []
 
@@ -246,6 +309,75 @@ def _generate_explanation_tag(row: pd.Series) -> str:
         tags.append("public holiday")
 
     return " + ".join(tags) if tags else "normal conditions"
+
+
+def _apply_intervention_outputs(result_df: pd.DataFrame, run_start: datetime) -> None:
+    """Compute intervention outputs and update file-backed intervention state."""
+    config = load_intervention_config()
+    adjacency_map = load_zone_adjacency()
+    state_path = OUTPUTS_DIR / "intervention_state.json"
+    state = load_state(config, path=state_path)
+    surplus_buffer = float(config.get("surplus_buffer", 0.2))
+
+    snapshot_by_zone = {
+        str(row.get("zone_name", "")): {
+            "taxi_count": float(row.get("taxi_count", 0.0) or 0.0),
+            "baseline_supply": float(row.get("baseline_supply", row.get("taxi_count", 1.0)) or 1.0),
+        }
+        for _, row in result_df.iterrows()
+    }
+
+    decisions: list[dict] = []
+    pending_state_updates: list[tuple[str, str, float]] = []
+
+    for idx, row in result_df.iterrows():
+        zone_name = str(row.get("zone_name", ""))
+        zone_key = str(int(row.get("zone_id", idx)))
+        predicted_shortage = float(row.get("predicted_shortage", 0.0) or 0.0)
+        acting_threshold = float(config.get("shortage_thresholds", {}).get("monitor_max", 0.25))
+        persistence_count = update_persistence(state, zone_key, predicted_shortage > acting_threshold)
+        neighbor_surplus = compute_neighbor_surplus(
+            zone_name=zone_name,
+            snapshot_by_zone=snapshot_by_zone,
+            adjacency_map=adjacency_map,
+            surplus_buffer=surplus_buffer,
+        )
+        decision = select_action(
+            predicted_shortage=predicted_shortage,
+            persistence_count=persistence_count,
+            neighbor_surplus=neighbor_surplus,
+            remaining_budget=get_remaining_budget(state),
+            last_actions_for_zone=get_last_actions(state, zone_key),
+            config=config,
+            now=run_start,
+        )
+        decisions.append({
+            "severity_bucket": decision.severity_bucket,
+            "persistence_count": decision.persistence_count,
+            "neighbor_surplus": decision.neighbor_surplus,
+            "recommended_action": decision.recommended_action,
+            "action_reason": decision.action_reason,
+            "estimated_action_cost": decision.estimated_action_cost,
+            "estimated_shortage_reduction": decision.estimated_shortage_reduction,
+            "budget_remaining": decision.budget_remaining,
+            "constraints_triggered": json.dumps(decision.constraints_triggered),
+        })
+        pending_state_updates.append((zone_key, decision.recommended_action, decision.estimated_action_cost))
+        # Shadow budget during the run so later rows see the same-run spend.
+        if decision.recommended_action in {"incentive", "rebalance_plus_incentive"}:
+            state = apply_action(state, zone_key, decision.recommended_action, decision.estimated_action_cost, config, path=state_path, now=run_start)
+        else:
+            state.setdefault("last_actions", {}).setdefault(zone_key, {})
+
+    for zone_key, action, action_cost in pending_state_updates:
+        if action not in {"incentive", "rebalance_plus_incentive"}:
+            state = apply_action(state, zone_key, action, action_cost, config, path=state_path, now=run_start)
+
+    save_state(state, path=state_path)
+
+    intervention_df = pd.DataFrame(decisions, index=result_df.index)
+    for col in intervention_df.columns:
+        result_df[col] = intervention_df[col]
 
 
 def _validate_schema(df: pd.DataFrame, schema_cols: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -299,6 +431,7 @@ def _build_meta(
     drift_flag, model_version, status, latency_ms=0,
     avg_delay_min=0.0, fulfilment_rate=0.0, total_taxi_count=0,
     high_risk_zones_now=0, supply_now=0, rapid_depletion_zones=0,
+    avg_demand_pressure_score=0.0, avg_imbalance_score=0.0,
     feature_nan_count=0,
 ) -> dict:
     return {
@@ -318,6 +451,8 @@ def _build_meta(
         "high_risk_zones_now":    high_risk_zones_now,
         "supply_now":             supply_now,
         "rapid_depletion_zones":  rapid_depletion_zones,
+        "avg_demand_pressure_score": avg_demand_pressure_score,
+        "avg_imbalance_score":    avg_imbalance_score,
         # Number of feature cells filled with 0 due to missing upstream data.
         # Non-zero values indicate partial ingestion failures (carpark, weather,
         # travel-time sources). Surfaced in pipeline.log so ops can see when

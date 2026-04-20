@@ -32,6 +32,22 @@ export interface Overview {
 export interface Zone {
   zone_id: number; zone_name: string; region: string;
   risk_level: 'high' | 'medium' | 'low'; delay_risk_score: number;
+  depletion_risk_score?: number | null;
+  demand_pressure_score?: number | null;
+  demand_pressure_level?: string | null;
+  imbalance_score?: number | null;
+  imbalance_level?: string | null;
+  policy_action?: string | null;
+  policy_reason?: string | null;
+  predicted_shortage?: number | null;
+  severity_bucket?: string | null;
+  persistence_count?: number | null;
+  neighbor_surplus?: number | null;
+  recommended_action?: string | null;
+  action_reason?: string | null;
+  estimated_action_cost?: number | null;
+  estimated_shortage_reduction?: number | null;
+  budget_remaining?: number | null;
   taxi_count: number; current_supply: number;
   depletion_rate_1h: number; supply_vs_yesterday: number;
   explanation_tag: string; recommendation?: string;
@@ -66,6 +82,21 @@ export interface Recommendation {
   risk_level: 'high' | 'medium' | 'low';
   priority: 'critical' | 'high' | 'medium' | 'low';
   delay_risk_score: number; confidence: number;
+  depletion_risk_score?: number | null;
+  demand_pressure_score?: number | null;
+  imbalance_score?: number | null;
+  imbalance_level?: string | null;
+  policy_action?: string | null;
+  policy_reason?: string | null;
+  predicted_shortage?: number | null;
+  severity_bucket?: string | null;
+  persistence_count?: number | null;
+  neighbor_surplus?: number | null;
+  recommended_action?: string | null;
+  action_reason?: string | null;
+  estimated_action_cost?: number | null;
+  estimated_shortage_reduction?: number | null;
+  budget_remaining?: number | null;
   issue_detected: string; recommendation: string;
   expected_impact: string; explanation_tag: string;
   last_updated?: string | null;
@@ -137,6 +168,8 @@ export interface LatestRun {
   supply_now?: number | null
   high_risk_zones_now?: number | null
   rapid_depletion_zones?: number | null
+  avg_demand_pressure_score?: number | null
+  avg_imbalance_score?: number | null
 }
 
 export interface FeatureDriftEntry {

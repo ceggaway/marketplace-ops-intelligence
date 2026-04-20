@@ -71,7 +71,7 @@ def test_build_features_expected_columns():
         "taxi_count", "taxi_lag_1h", "taxi_lag_24h",
         "taxi_rolling_3h", "taxi_rolling_6h",
         "depletion_rate_1h", "depletion_rate_3h", "supply_vs_yesterday",
-        "rainfall_mm", "is_raining", "rain_intensity",
+        "rainfall_mm", "is_raining", "rain_intensity", "congestion_ratio", "train_disruption_flag",
         "is_holiday", "is_eve_holiday",
         "zone_type_encoded",
     ]
@@ -149,6 +149,12 @@ def test_rain_intensity_bucketing():
     df = pd.DataFrame({"rainfall_mm": [0.0, 1.0, 5.0, 15.0], "is_raining": [False, True, True, True]})
     df = _derive_weather_flags(df)
     assert list(df["rain_intensity"]) == [0, 1, 2, 3]
+
+
+def test_train_disruption_flag_defaults_to_zero():
+    df = build_features(_make_df())
+    assert "train_disruption_flag" in df.columns
+    assert set(df["train_disruption_flag"].unique()).issubset({0, 1})
 
 
 # ── Supply lag features ───────────────────────────────────────────────────────

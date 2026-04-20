@@ -59,7 +59,7 @@ def _build_context() -> str:
         rapid  = int((preds["depletion_rate_1h"] > 0.30).sum()) if "depletion_rate_1h" in preds.columns else 0
 
         lines.append(f"\nZONE RISK SUMMARY  (55 zones total)")
-        lines.append(f"  High risk   : {high} zones  (shortage probability ≥ 0.70)")
+        lines.append(f"  High risk   : {high} zones  (depletion probability ≥ 0.70)")
         lines.append(f"  Medium risk : {medium} zones  (0.40 – 0.69)")
         lines.append(f"  Low risk    : {low} zones  (< 0.40)")
         lines.append(f"  Total taxis : {total} active across all zones")

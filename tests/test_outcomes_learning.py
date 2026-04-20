@@ -11,22 +11,22 @@ from backend.recommendations.policy_effectiveness import effectiveness_for_conte
 def _sample_recs() -> pd.DataFrame:
     return pd.DataFrame([{
         "recommendation_id": "rec-1",
-        "action_id": "mild_surge",
+        "action_id": "rebalance_plus_incentive",
         "zone_id": 1,
         "zone_name": "Orchard",
         "priority": "high",
         "risk_level": "high",
         "delay_risk_score": 0.82,
-        "recommendation": "Activate surge pricing immediately",
-        "pricing_level": "mild",
-        "incentive_level": "none",
+        "recommendation": "Rebalance nearby drivers and pair it with a targeted incentive.",
+        "pricing_level": "none",
+        "incentive_level": "targeted",
         "push_level": "none",
         "root_cause": "weather",
-        "intervention_window": "tight",
-        "eta_minutes": 12,
+        "intervention_window": "unknown",
+        "eta_minutes": None,
         "adjacent_risk_zones": "Newton",
         "alternative_actions": "[]",
-        "estimated_cost_sgd": 1.2,
+        "estimated_cost_sgd": 2.1,
         "expected_supply_response_30m": 3.5,
         "expected_recovery_probability": 0.44,
         "expected_recovery_rate": 0.4,
@@ -49,10 +49,10 @@ def test_log_recommendations_persists_learning_context(tmp_path):
         outcome_tracker.log_recommendations(_sample_recs())
     record = json.loads(log.read_text().strip())
     assert record["recommendation_id"] == "rec-1"
-    assert record["action_id"] == "mild_surge"
+    assert record["action_id"] == "rebalance_plus_incentive"
     assert record["root_cause"] == "weather"
-    assert record["intervention_window"] == "tight"
-    assert record["estimated_cost_sgd"] == 1.2
+    assert record["intervention_window"] == "unknown"
+    assert record["estimated_cost_sgd"] == 2.1
     assert record["expected_supply_response_30m"] == 3.5
     assert record["followed_status"] is None
 
@@ -90,7 +90,7 @@ def test_summarise_action_outcomes_prefers_followed_resolved():
 def test_effectiveness_for_context_falls_back_to_action_level():
     records = [
         {
-            "action_type": "surge_pricing",
+            "action_type": "rebalance",
             "risk_level": "high",
             "root_cause": "weather",
             "intervention_window": "tight",
@@ -101,7 +101,7 @@ def test_effectiveness_for_context_falls_back_to_action_level():
             "score_after": 0.4,
         },
         {
-            "action_type": "surge_pricing",
+            "action_type": "rebalance",
             "risk_level": "medium",
             "root_cause": "unknown",
             "intervention_window": "moderate",
@@ -113,14 +113,14 @@ def test_effectiveness_for_context_falls_back_to_action_level():
         },
     ]
     stats = effectiveness_for_context(
-        action_type="surge_pricing",
+        action_type="rebalance",
         risk_level="high",
         root_cause="structural_gap",
         intervention_window="ample",
         adjacent_risk_flag=False,
         records=records,
     )
-    assert stats["action_type"] == "surge_pricing"
+    assert stats["action_type"] == "rebalance"
     assert stats["evidence_count"] >= 1
     assert "action" in stats["policy_rank_reason"]
     assert "driver_response_reason" in stats

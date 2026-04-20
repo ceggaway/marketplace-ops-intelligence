@@ -39,6 +39,21 @@ _SAMPLE_PREDICTIONS = pd.DataFrame([
         "zone_id": 1, "zone_name": "Orchard", "region": "Central",
         "timestamp": "2024-01-01 08:00:00+08:00",
         "delay_risk_score": 0.85, "risk_level": "high",
+        "depletion_risk_score": 0.85,
+        "demand_pressure_score": 0.72,
+        "imbalance_score": 0.78,
+        "imbalance_level": "high",
+        "policy_action": "intervention",
+        "policy_reason": "heuristic baseline",
+        "predicted_shortage": 0.88,
+        "severity_bucket": "severe",
+        "persistence_count": 3,
+        "neighbor_surplus": 1.2,
+        "recommended_action": "rebalance_plus_incentive",
+        "action_reason": "Selected rebalance_plus_incentive because it maximized deterministic net value under current constraints.",
+        "estimated_action_cost": 2.1,
+        "estimated_shortage_reduction": 0.29,
+        "budget_remaining": 27.9,
         "taxi_count": 42, "depletion_rate_1h": 0.45, "supply_vs_yesterday": 0.65,
         "explanation_tag": "rapid depletion + peak hour",
     },
@@ -46,6 +61,21 @@ _SAMPLE_PREDICTIONS = pd.DataFrame([
         "zone_id": 2, "zone_name": "Bedok", "region": "East",
         "timestamp": "2024-01-01 08:00:00+08:00",
         "delay_risk_score": 0.35, "risk_level": "low",
+        "depletion_risk_score": 0.35,
+        "demand_pressure_score": 0.20,
+        "imbalance_score": 0.15,
+        "imbalance_level": "low",
+        "policy_action": "no_action",
+        "policy_reason": "heuristic baseline",
+        "predicted_shortage": 0.20,
+        "severity_bucket": "low",
+        "persistence_count": 0,
+        "neighbor_surplus": 0.0,
+        "recommended_action": "monitor",
+        "action_reason": "Constraints blocked active intervention; continue monitoring.",
+        "estimated_action_cost": 0.0,
+        "estimated_shortage_reduction": 0.0,
+        "budget_remaining": 30.0,
         "taxi_count": 80, "depletion_rate_1h": 0.05, "supply_vs_yesterday": 1.10,
         "explanation_tag": "normal conditions",
     },
@@ -62,14 +92,16 @@ _SAMPLE_RECS = pd.DataFrame([
         "confidence": 0.85, "priority": "high",
         "explanation_tag": "demand spike",
         "last_updated": "2024-01-01T08:00:00+00:00",
-        "action_type": "driver_incentive",
-        "expected_recovery_rate": 0.44,
-        "expected_improvement_rate": 0.71,
-        "estimated_score_delta": -0.11,
-        "confidence_band": "medium",
-        "evidence_count": 9,
-        "follow_rate": 0.56,
-        "policy_rank_reason": "same action and risk level",
+        "action_type": "rebalance_plus_incentive",
+        "predicted_shortage": 0.88,
+        "severity_bucket": "severe",
+        "persistence_count": 3,
+        "neighbor_surplus": 1.2,
+        "recommended_action": "rebalance_plus_incentive",
+        "action_reason": "Selected rebalance_plus_incentive because it maximized deterministic net value under current constraints.",
+        "estimated_action_cost": 2.1,
+        "estimated_shortage_reduction": 0.29,
+        "budget_remaining": 27.9,
     },
 ])
 
@@ -200,6 +232,7 @@ def test_zones_200():
         resp = client.get("/api/v1/zones")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+    assert "predicted_shortage" in resp.json()[0]
 
 
 def test_zones_risk_level_filter():
@@ -241,6 +274,7 @@ def test_zone_detail_200():
     body = resp.json()
     assert body["zone_id"] == 1
     assert "delay_risk_score" in body
+    assert body["recommended_action"] == "rebalance_plus_incentive"
 
 
 def test_zone_detail_404_for_unknown():
@@ -263,6 +297,7 @@ def test_recommendations_200():
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
     assert "recommendation_id" in resp.json()[0]
+    assert resp.json()[0]["recommended_action"] == "rebalance_plus_incentive"
 
 
 def test_recommendations_priority_filter():

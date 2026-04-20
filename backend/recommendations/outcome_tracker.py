@@ -14,12 +14,12 @@ Each line: one JSON record with these fields:
     score_after: null until checked
 
 Action types (for aggregation / learning):
-    "surge_pricing"     – fare adjustment recommended
-    "driver_incentive"  – driver bonus/incentive recommended
-    "push_notification" – driver push only (medium risk pre-positioning)
-    "escalation"        – human ops manager alert
-    "monitor"           – watchlist, no intervention
-    "none"              – low risk, no action
+    "rebalance"                 – move supply from adjacent zones with surplus
+    "incentive"                 – targeted spend to activate supply
+    "rebalance_plus_incentive"  – combined repositioning + spend
+    "ops_alert"                 – human ops manager alert
+    "monitor"                   – watchlist, no intervention
+    "none"                      – low risk, no action
 """
 
 import json
@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from backend.recommendations.evaluation import assign_holdout_bucket
 from backend.recommendations.policy_effectiveness import action_type_from_recommendation, eta_bucket
 
 OUTCOME_LOG = Path("data/outputs/recommendation_outcomes.jsonl")
@@ -53,10 +54,12 @@ def log_recommendations(recs_df: pd.DataFrame) -> None:
     OUTCOME_LOG.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTCOME_LOG, "a") as f:
         for _, row in recs_df.iterrows():
-            action_type = _classify_action_type(
-                str(row.get("priority", "low")),
-                str(row.get("recommendation", "")),
-            )
+            action_type = str(row.get("action_type") or row.get("recommended_action") or "").strip()
+            if not action_type:
+                action_type = _classify_action_type(
+                    str(row.get("priority", "low")),
+                    str(row.get("recommendation", "")),
+                )
             record = {
                 "recommendation_id": str(row.get("recommendation_id", "")),
                 "action_id":     str(row.get("action_id", action_type)),
@@ -68,9 +71,15 @@ def log_recommendations(recs_df: pd.DataFrame) -> None:
                 "push_level":    str(row.get("push_level", "none")),
                 "priority":      str(row.get("priority", "low")),
                 "score_at_time": round(float(row.get("delay_risk_score", 0)), 4),
+                "depletion_risk_score": _float_or_none(row.get("depletion_risk_score", row.get("delay_risk_score"))),
+                "demand_pressure_score": _float_or_none(row.get("demand_pressure_score")),
+                "imbalance_score": _float_or_none(row.get("imbalance_score")),
+                "imbalance_level": str(row.get("imbalance_level", "low")),
                 "supply_at_time": int(row.get("taxi_count", 0) or 0),
                 "risk_level":    str(row.get("risk_level", "low")),
                 "root_cause":    str(row.get("root_cause", "unknown")),
+                "policy_action": str(row.get("policy_action", "no_action")),
+                "policy_reason": str(row.get("policy_reason", "")),
                 "intervention_window": str(row.get("intervention_window", "unknown")),
                 "eta_bucket":    eta_bucket(row.get("eta_minutes")),
                 "adjacent_risk_flag": bool(str(row.get("adjacent_risk_zones", "")).strip()),
@@ -91,6 +100,10 @@ def log_recommendations(recs_df: pd.DataFrame) -> None:
                 "policy_rank_reason": str(row.get("policy_rank_reason", "")),
                 "logged_at":     now_iso,
                 "check_after":   check_t,
+                "evaluation_bucket": assign_holdout_bucket(
+                    int(row.get("zone_id", 0) or 0),
+                    str(row.get("timestamp", now_iso) or now_iso),
+                ),
                 "outcome":       None,
                 "score_after":   None,
                 "supply_after_30m": None,

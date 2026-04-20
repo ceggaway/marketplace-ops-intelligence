@@ -49,6 +49,37 @@ training:
 scoring:
   batch_schedule: "0 * * * *"   # every hour (cron, SGT)
 
+intervention:
+  shortage_thresholds:
+    monitor_max: 0.25
+    watch_max: 0.55
+    severe_min: 0.85
+  action_costs:
+    monitor: 0.0
+    rebalance: 0.4
+    incentive: 1.5
+    rebalance_plus_incentive: 2.1
+    ops_alert: 0.2
+  action_uplifts:
+    monitor: 0.0
+    rebalance: 0.18
+    incentive: 0.22
+    rebalance_plus_incentive: 0.34
+    ops_alert: 0.05
+  cooldown_windows_min:
+    monitor: 0
+    rebalance: 45
+    incentive: 60
+    rebalance_plus_incentive: 90
+    ops_alert: 15
+  daily_budget: 30.0
+  persistence_threshold: 2
+  surplus_buffer: 0.2
+  net_value_weights:
+    shortage_reduction: 1.0
+    cost: 0.35
+    ops_alert_penalty: 0.6
+
 monitoring:
   failed_row_pct_threshold: 0.20   # trigger rollback if >20% rows fail
   psi_alert_threshold: 0.25

@@ -1,12 +1,12 @@
 """
 Model Training Pipeline
 =======================
-Trains a supply shortage prediction model and saves artifacts to the model registry.
+Trains the repo's near-term supply depletion risk model and saves artifacts to the model registry.
 
 Model type: LightGBM classifier
 Target variable: `supply_shortage`
     1 if taxi_count at t+1 < taxi_count at t × 0.6
-    (supply falls by more than 40% in the next hour → shortage)
+    (legacy name; operationally this represents a depletion event)
 
 Artifacts saved per version:
     model.pkl            – serialised model

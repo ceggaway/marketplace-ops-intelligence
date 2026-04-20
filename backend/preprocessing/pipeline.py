@@ -2,6 +2,8 @@
 Feature Engineering Pipeline
 =============================
 Transforms cleaned taxi availability records into model-ready features.
+These combine supply-state signals with exogenous pressure proxies; they do
+not directly observe rider demand.
 
 Input columns expected:
     zone_id, zone_name, region, zone_type, timestamp,
@@ -21,8 +23,9 @@ Features produced:
         depletion_rate_3h   – (taxi_rolling_3h - taxi_count) / (taxi_rolling_3h + 1)
         supply_vs_yesterday – taxi_count / (taxi_lag_24h + 1)
 
-    Weather:
-        rainfall_mm, is_raining, rain_intensity (0/1/2/3)
+    Weather / pressure proxies:
+        rainfall_mm, is_raining, rain_intensity (0/1/2/3),
+        congestion_ratio, train_disruption_flag
 
     Calendar:
         is_holiday, is_eve_holiday
@@ -35,6 +38,8 @@ Output: feature_df with all above columns + zone_id, zone_name, region, zone_typ
 
 import numpy as np
 import pandas as pd
+
+from backend.ingestion.train_disruptions import load_train_disruption_flags
 
 _PEAK_MORNING = set(range(7, 10))
 _PEAK_EVENING = set(range(17, 21))
@@ -282,11 +287,20 @@ def _passthrough_external_features(df: pd.DataFrame) -> pd.DataFrame:
         temperature_c          – Open-Meteo hourly temperature (°C)
         carpark_available_lots – LTA Carpark Availability (integer count)
         congestion_ratio       – LTA Estimated Travel Times (ratio ≥ 0)
+        train_disruption_flag  – placeholder rail disruption indicator (0/1)
     """
+    if "train_disruption_flag" not in df.columns:
+        disruption = load_train_disruption_flags(df.get("timestamp"))
+        if not disruption.empty and "train_disruption_flag" in disruption.columns and len(disruption) == len(df):
+            df["train_disruption_flag"] = disruption["train_disruption_flag"].to_numpy()
+        else:
+            df["train_disruption_flag"] = 0
+
     defaults = {
         "temperature_c":           28.0,   # SG mean temperature
         "carpark_available_lots":  0,
         "congestion_ratio":        1.0,    # neutral / free-flow
+        "train_disruption_flag":   0,
     }
     for col, default in defaults.items():
         if col not in df.columns:

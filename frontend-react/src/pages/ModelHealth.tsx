@@ -427,11 +427,6 @@ export default function ModelHealth() {
             </div>
           </div>
 
-          <div style={{ marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12 }}>
-            <button onClick={() => scrollTo(historyRef)} style={{ fontSize: '0.72rem', color: COLORS.primary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              View Run History →
-            </button>
-          </div>
         </GlassCard></div>
 
         {/* RIGHT: Performance Trend */}
@@ -497,11 +492,6 @@ export default function ModelHealth() {
             Latest · AUC: <span style={{ color: COLORS.primary, fontWeight: 500 }}>{auc != null ? auc.toFixed(4) : '—'}</span>
           </div>
 
-          <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 10 }}>
-            <button onClick={() => scrollTo(historyRef)} style={{ fontSize: '0.72rem', color: COLORS.primary, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              View Full Metrics →
-            </button>
-          </div>
         </GlassCard>
       </div>
 

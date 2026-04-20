@@ -249,7 +249,7 @@ function DetailPanel({
           <div style={{ fontSize: '1.60rem', fontWeight: 300, color, lineHeight: 1 }}>
             {rec.delay_risk_score.toFixed(3)}
           </div>
-          <div style={MINI_LABEL}>shortage score</div>
+          <div style={MINI_LABEL}>depletion risk</div>
         </div>
       </div>
 
@@ -495,7 +495,7 @@ function DetailPanel({
 
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 10 }}>
-        <button className="btn-glass" onClick={() => showToast(`Zone ${rec.zone_name}: shortage score ${rec.delay_risk_score.toFixed(3)}, priority ${rec.priority}. Recommended: ${rec.recommendation}`, 'info')} style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+        <button className="btn-glass" onClick={() => showToast(`Zone ${rec.zone_name}: depletion risk ${rec.delay_risk_score.toFixed(3)}, priority ${rec.priority}. Recommended: ${rec.recommendation}`, 'info')} style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
           View Details
         </button>
         <button className="btn-primary" disabled={feedbackPending} onClick={() => onFeedback('followed')} style={{ flex: 1, justifyContent: 'center', padding: '10px 0', display: 'flex', alignItems: 'center', gap: 6, opacity: feedbackPending ? 0.7 : 1 }}>
@@ -687,14 +687,14 @@ export default function ActionCenter() {
             {/* Avg Risk Score (labelled correctly) */}
             <GlassCard hover={false} style={{ padding: '16px 18px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={KPI_LABEL}>Avg Shortage Score</div>
+                <div style={KPI_LABEL}>Avg Depletion Risk</div>
                 <TrendingDown size={14} color={COLORS.medium} style={{ opacity: 0.6 }} />
               </div>
               <div style={{ fontSize: '2.0rem', fontWeight: 700, color: 'rgba(255,255,255,0.95)', lineHeight: 1 }}>
                 {avgRisk.toFixed(3)}
               </div>
               <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.40)', marginTop: 6 }}>
-                Mean model score across all {recs?.length ?? 0} zones (0 = no risk, 1 = certain shortage)
+                Mean depletion-model score across all {recs?.length ?? 0} zones (0 = no risk, 1 = severe depletion risk)
               </div>
             </GlassCard>
 

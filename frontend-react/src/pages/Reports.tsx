@@ -639,8 +639,8 @@ function ModelImpactTab() {
               <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.55)', marginBottom: 14 }}>
                 {report.active_version}</div>
               <MetricRow label="F1 score" value={typeof report.f1 === 'number' ? report.f1.toFixed(4) : null} note="Harmonic mean of precision + recall" />
-              <MetricRow label="Precision" value={typeof report.precision === 'number' ? `${(report.precision * 100).toFixed(1)}%` : null} note="Of alerts fired, % that are genuine shortages" />
-              <MetricRow label="Recall" value={typeof report.recall === 'number' ? `${(report.recall * 100).toFixed(1)}%` : null} note="Of genuine shortages, % caught by the model" />
+              <MetricRow label="Precision" value={typeof report.precision === 'number' ? `${(report.precision * 100).toFixed(1)}%` : null} note="Of alerts fired, % that were genuine depletion-risk signals" />
+              <MetricRow label="Recall" value={typeof report.recall === 'number' ? `${(report.recall * 100).toFixed(1)}%` : null} note="Of genuine depletion events, % caught by the model" />
             </div>
 
             {/* Version lineage */}

@@ -26,7 +26,7 @@ except ImportError:
 
 import pandas as pd
 
-from backend.ingestion.lta_poller import load_last_n_snapshots, poll_once, save_snapshot
+from backend.ingestion.lta_poller import generate_synthetic_snapshot, load_last_n_snapshots, poll_once, save_snapshot
 from backend.ingestion.loader import get_zone_lookup, _SG_HOLIDAYS, generate_synthetic_data
 from backend.ingestion.weather import get_hourly_weather
 from backend.ingestion.carpark import fetch_carpark_availability, compute_zone_carpark_features
@@ -57,14 +57,26 @@ def main():
     api_key     = os.environ.get("LTA_API_KEY")
     zone_lookup = get_zone_lookup()
 
-    # Fetch current 5-min snapshot and persist it to data/raw/taxi_snapshots/
-    snapshot = poll_once(api_key, zone_lookup)
-    save_snapshot(snapshot)
+    # Fetch current 5-min snapshot and persist it to data/raw/taxi_snapshots/.
+    # For local/dev runs, degrade gracefully to recent saved snapshots or a
+    # synthetic snapshot when the live endpoint is unavailable.
+    snapshot = pd.DataFrame()
+    try:
+        snapshot = poll_once(api_key, zone_lookup)
+        save_snapshot(snapshot)
+        print("      Live taxi snapshot fetched from LTA")
+    except Exception as exc:
+        print(f"      Live taxi fetch failed ({exc})")
 
     # Load up to 7 days of saved snapshots for lag-feature context
     # (168h × 12 snapshots/h = 2016 files; uses whatever is available)
     recent_raw = load_last_n_snapshots(n=2016)
-    if recent_raw.empty:
+    if recent_raw.empty and not snapshot.empty:
+        recent_raw = snapshot
+    elif recent_raw.empty:
+        print("      No recent snapshots available — using synthetic taxi snapshot for local scoring")
+        snapshot = generate_synthetic_snapshot(zone_lookup)
+        save_snapshot(snapshot)
         recent_raw = snapshot
 
     # Aggregate 5-min snapshots → hourly time series (one row per zone per hour)

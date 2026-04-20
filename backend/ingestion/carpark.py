@@ -4,8 +4,8 @@ Carpark Availability
 Parses LTA DataMall Carpark Availability API response, maps each carpark to
 the nearest URA planning zone, and computes zone-level available parking lots.
 
-Low carpark availability → people take taxis instead of driving → higher
-taxi demand → supply shortage risk increases.
+Low carpark availability can increase taxi demand pressure, which may raise
+supply depletion risk when availability is already tight.
 
 LTA DataMall Carpark Availability endpoint:
     GET https://datamall2.mytransport.sg/ltaodataservice/CarParkAvailability

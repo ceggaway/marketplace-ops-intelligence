@@ -8,9 +8,9 @@ Primary dataset:
     LTA DataMall – Taxi Availability (real-time taxi GPS pings)
     → available taxi count per zone per hour is the core supply signal.
 
-Problem:
-    Predict supply shortage per zone: will available taxis fall below 60% of
-    their current level in the next hour? If yes, the zone needs intervention.
+Current modeling problem:
+    Predict near-term supply depletion per zone: will available taxis fall
+    below 60% of their current level in the next hour?
 
 When real API data is not available, use generate_synthetic_data() to produce
 a realistic zone-hour taxi availability dataset for development and CI.
