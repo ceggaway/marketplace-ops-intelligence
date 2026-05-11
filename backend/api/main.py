@@ -39,14 +39,11 @@ def _auto_bootstrap_and_score() -> None:
 
     with open(log_dir / "startup.log", "a") as f:
         if not active.exists():
-            allow_synthetic = os.environ.get("BOOTSTRAP_ALLOW_SYNTHETIC", "false").lower() in {"1", "true", "yes"}
-            cmd = [sys.executable, "scripts/bootstrap_model.py"]
-            if allow_synthetic:
-                cmd.append("--allow-synthetic")
+            cmd = [sys.executable, "scripts/bootstrap_model.py", "--train-if-missing", "--allow-synthetic"]
             subprocess.run(cmd, cwd=str(project_root), stdout=f, stderr=f)
 
         subprocess.run(
-            [sys.executable, "scripts/run_scoring.py"],
+            [sys.executable, "scripts/run_scoring.py", "--allow-synthetic"],
             cwd=str(project_root), stdout=f, stderr=f,
         )
 
