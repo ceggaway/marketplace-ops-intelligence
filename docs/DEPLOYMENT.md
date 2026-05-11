@@ -52,6 +52,15 @@ runtime state under:
 
 Do not use ephemeral storage for this directory unless this is a throwaway demo.
 
+For a free Render demo without a mounted disk, use:
+
+```text
+MARKETPLACE_DATA_DIR=data
+```
+
+Do not set it to `/data`; Render does not allow writing there. Use `/var/data`
+only when a Render disk is mounted at `/var/data`.
+
 ## Required Environment Variables
 
 ```bash

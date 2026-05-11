@@ -11,7 +11,16 @@ from pathlib import Path
 
 
 def data_dir() -> Path:
-    return Path(os.environ.get("MARKETPLACE_DATA_DIR", "data"))
+    configured = Path(os.environ.get("MARKETPLACE_DATA_DIR", "data"))
+    try:
+        configured.mkdir(parents=True, exist_ok=True)
+        return configured
+    except PermissionError:
+        if configured.is_absolute():
+            fallback = Path("data")
+            fallback.mkdir(parents=True, exist_ok=True)
+            return fallback
+        raise
 
 
 def raw_dir() -> Path:
