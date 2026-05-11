@@ -19,8 +19,10 @@ import pandas as pd
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from backend.paths import outputs_dir
+
 router  = APIRouter()
-OUT_DIR = Path("data/outputs")
+OUT_DIR = outputs_dir()
 
 
 # ── Request / Response ────────────────────────────────────────────────────────

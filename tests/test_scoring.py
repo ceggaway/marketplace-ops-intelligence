@@ -16,6 +16,7 @@ from backend.intervention.state_tracker import (
     update_persistence,
 )
 from backend.modeling.shortage import classify_severity_bucket, compute_predicted_shortage
+from backend.recommendations.causal_validity import evaluate_synthetic_control_validity
 from backend.recommendations.engine import _assign_risk, _build_recommendation
 from backend.scoring.batch_scorer import _assign_risk_level, _generate_explanation_tag
 
@@ -24,6 +25,7 @@ CONFIG = {
     "shortage_thresholds": {"monitor_max": 0.25, "watch_max": 0.55, "severe_min": 0.85},
     "action_costs": {
         "monitor": 0.0,
+        "driver_comms": 0.1,
         "rebalance": 0.4,
         "incentive": 1.5,
         "rebalance_plus_incentive": 2.1,
@@ -31,6 +33,7 @@ CONFIG = {
     },
     "action_uplifts": {
         "monitor": 0.0,
+        "driver_comms": 0.02,
         "rebalance": 0.18,
         "incentive": 0.22,
         "rebalance_plus_incentive": 0.34,
@@ -38,6 +41,7 @@ CONFIG = {
     },
     "cooldown_windows_min": {
         "monitor": 0,
+        "driver_comms": 30,
         "rebalance": 45,
         "incentive": 60,
         "rebalance_plus_incentive": 90,
@@ -235,6 +239,11 @@ def test_recommendation_has_required_intervention_keys():
         "estimated_action_cost",
         "estimated_shortage_reduction",
         "budget_remaining",
+        "action_tier",
+        "requires_approver",
+        "expected_supply_uplift",
+        "estimated_recoverable_opportunity",
+        "opportunity_ratio",
         "recommendation",
         "priority",
     ]
@@ -248,7 +257,44 @@ def test_recommendation_priority_and_confidence_are_valid():
     assert 0.0 <= rec["confidence"] <= 1.0
 
 
+def test_recommendation_uses_prd_governance_and_roi_bridge():
+    rec = _build_recommendation(_rec_row(recommended_action="driver_comms", estimated_action_cost=0.1), {}, {})
+    assert rec["action_tier"] == 2
+    assert rec["requires_approver"] == "ops_lead"
+    assert rec["estimated_recoverable_opportunity"] > 0
+    assert rec["opportunity_ratio"] > 0
+
+
 def test_assign_risk_helper():
     assert _assign_risk(0.2) == "low"
     assert _assign_risk(0.5) == "medium"
     assert _assign_risk(0.9) == "high"
+
+
+def test_synthetic_control_validity_suppresses_failed_gates():
+    result = evaluate_synthetic_control_validity(
+        normalized_rmse=0.4,
+        mape=0.3,
+        donor_pool_size=5,
+        placebo_percentile=0.5,
+        post_period_min=20,
+        action_tier=3,
+        spillover_exclusion_applied=False,
+    )
+    assert result["all_gates_passed"] is False
+    assert "insufficient counterfactual quality" in result["suppression_reason"]
+    assert any(g["gate"] == "donor_pool_size" and g["status"] == "fail" for g in result["validity_gates"])
+
+
+def test_synthetic_control_validity_passes_with_prd_defaults():
+    result = evaluate_synthetic_control_validity(
+        normalized_rmse=0.2,
+        mape=0.2,
+        donor_pool_size=12,
+        placebo_percentile=0.95,
+        post_period_min=60,
+        action_tier=4,
+        spillover_exclusion_applied=True,
+    )
+    assert result["all_gates_passed"] is True
+    assert result["suppression_reason"] is None

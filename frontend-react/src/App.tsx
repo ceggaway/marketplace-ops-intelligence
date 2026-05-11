@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import Spinner from './components/Spinner'
 
 const Overview     = lazy(() => import('./pages/Overview'))
+const ProjectBrief = lazy(() => import('./pages/ProjectBrief'))
 const ZoneRisk     = lazy(() => import('./pages/ZoneRisk'))
 const ActionCenter = lazy(() => import('./pages/ActionCenter'))
 const ModelHealth  = lazy(() => import('./pages/ModelHealth'))
@@ -20,6 +21,7 @@ export default function App() {
           <Suspense fallback={<Spinner size={36} />}>
             <Routes>
               <Route path="/"           element={<Overview />} />
+              <Route path="/project"    element={<ProjectBrief />} />
               <Route path="/zones"      element={<ZoneRisk />} />
               <Route path="/actions"    element={<ActionCenter />} />
               <Route path="/health"     element={<ModelHealth />} />

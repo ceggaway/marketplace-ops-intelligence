@@ -40,7 +40,7 @@ Demand pressure is a proxy score derived from public exogenous signals such as:
 - day of week / weekend
 - rainfall intensity
 - congestion
-- train disruption placeholder flag
+- LTA TrainServiceAlerts disruption signal, with a safe zero fallback
 
 ### Imbalance
 Imbalance is a descriptive combination of:
@@ -169,6 +169,34 @@ Unchanged route. Registry lineage is filtered to show meaningful recent versions
 
 Unchanged route. Drift currently monitors the model-score distribution and selected feature distributions.
 
+## H3 Spatial Endpoints
+
+H3 endpoints are optional and read the latest `data/outputs/h3_predictions.csv`.
+Generate that file with:
+
+```bash
+python scripts/run_scoring.py --h3
+```
+
+H3 scoring requires prepared feature data at `data/processed/h3_supply_features.csv`.
+
+### GET `/h3/cells`
+
+Returns latest H3 cell predictions. Optional query params:
+- `parent_zone`
+- `severity_bucket`
+- `sparse`
+
+### GET `/h3/cells/{h3_cell}`
+
+Returns one H3 cell prediction plus polygon boundary as `[[lat, lon], ...]`.
+
+### GET `/h3/heatmap`
+
+Returns H3 cell polygons and risk fields for map rendering. Optional query params:
+- `parent_zone`
+- `min_risk`
+
 ## Important Non-Claims
 
 The current API does **not** provide:
@@ -181,3 +209,4 @@ It provides:
 - demand-pressure proxy signals
 - imbalance scores
 - heuristic intervention support
+- optional H3 cell-level drilldown when H3 predictions have been generated

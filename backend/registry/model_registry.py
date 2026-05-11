@@ -26,10 +26,34 @@ import pickle
 from datetime import datetime, timezone
 from pathlib import Path
 
-REGISTRY_DIR  = Path("data/registry")
+from backend.paths import registry_dir
+
+REGISTRY_DIR  = registry_dir()
 REGISTRY_FILE = REGISTRY_DIR / "registry.json"
 MODELS_DIR    = REGISTRY_DIR / "models"
 MAX_PREVIOUS_VERSIONS = 2
+METRIC_KEYS = [
+    "precision",
+    "recall",
+    "f1",
+    "roc_auc",
+    "accuracy",
+    "balanced_accuracy",
+    "log_loss",
+    "brier_score",
+    "mae",
+    "rmse",
+    "mse",
+    "r2",
+    "best_threshold",
+    "pred_mean",
+    "pred_std",
+    "pct_above_threshold",
+    "positive_rate",
+    "n_test",
+    "train_rows",
+    "val_rows",
+]
 
 
 def _parse_iso(value: str | None) -> datetime:
@@ -159,7 +183,7 @@ def register(version_id: str) -> None:
         "status":       "candidate",
         "trained_at":   meta.get("trained_at"),
         "promoted_at":  None,
-        "metrics":      {k: metrics[k] for k in ["precision","recall","f1","roc_auc"] if k in metrics},
+        "metrics":      _scalar_metrics(metrics),
     }
     reg["candidate_version"] = version_id
     _save_registry(reg)
@@ -209,6 +233,20 @@ def get_version_meta(version_id: str) -> dict:
     return meta
 
 
+def _scalar_metrics(metrics: dict) -> dict:
+    """Return numeric scalar metrics that are useful for experiment comparison."""
+    result = {}
+    for key in METRIC_KEYS:
+        if key not in metrics:
+            continue
+        value = metrics.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)) or value is None:
+            result[key] = value
+    return result
+
+
 def promote(version_id: str) -> None:
     """Mark a candidate version as active."""
     reg = _load_registry()
@@ -244,12 +282,12 @@ def promote(version_id: str) -> None:
 def rollback() -> str:
     """Roll back to the previous stable version. Returns rolled-back version id."""
     reg = _load_registry()
-    previous = None
-    # Find most recent 'previous' version
-    for vid, info in sorted(reg["versions"].items(), reverse=True):
-        if info.get("status") == "previous":
-            previous = vid
-            break
+    previous_ids = [
+        vid for vid, info in reg["versions"].items()
+        if info.get("status") == "previous"
+    ]
+    previous_ids.sort(key=lambda vid: _version_sort_key(vid, reg["versions"][vid]), reverse=True)
+    previous = previous_ids[0] if previous_ids else None
 
     if not previous:
         raise RuntimeError("No previous stable version to roll back to")
@@ -287,5 +325,8 @@ def list_versions(include_stale: bool = False, max_previous_versions: int = MAX_
         if not include_stale and status == "previous" and vid not in previous_kept:
             continue
         entry = {"version_id": vid, **info}
+        disk_metrics = _scalar_metrics(get_version_meta(vid))
+        if disk_metrics:
+            entry["metrics"] = {**(entry.get("metrics") or {}), **disk_metrics}
         result.append(entry)
     return sorted(result, key=lambda x: _version_sort_key(x["version_id"], x), reverse=True)

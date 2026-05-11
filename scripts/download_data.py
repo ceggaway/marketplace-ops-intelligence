@@ -17,17 +17,7 @@ What you get per snapshot:
     - Spatial distribution of supply across SG
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATASET 2 — LTA DataMall: Passenger Volume by OD (Demand Proxy)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Source  : https://datamall.lta.gov.sg/content/datamall/en/dynamic-data.html
-Format  : Monthly CSV download (requires LTA API key)
-Endpoint: POST https://datamall2.mytransport.sg/ltaodataservice/PV/ODTrain
-Columns : YEAR_MONTH, DAY_TYPE, TIME_PER_HOUR, PT_TYPE, ORIGIN_PT_CODE,
-          DESTINATION_PT_CODE, TOTAL_TRIPS
-Strategy: Use ORIGIN_PT_CODE → planning area join to get demand per zone per hour.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATASET 3 — Grab-Posisi (Kaggle, GPS traces)
+DATASET 2 — Grab-Posisi (Kaggle, GPS traces)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Kaggle   : https://www.kaggle.com/datasets/oscarwyd/grab-posisi
 Requires : kaggle CLI  — pip install kaggle
@@ -37,14 +27,14 @@ Filter   : Singapore bbox — lat [1.15, 1.48], lon [103.6, 104.1]
 Strategy : Driver ping density per planning area per hour → supply_proxy
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATASET 4 — data.gov.sg: Singapore Public Holidays
+DATASET 3 — data.gov.sg: Singapore Public Holidays
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Source  : https://data.gov.sg/datasets/d_3751791452397f1b1c80a8db5fc7d83c/view
 Format  : JSON via CKAN API — no key required
 Use     : is_holiday feature in preprocessing pipeline
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATASET 5 — URA Planning Area GeoJSON (Zone Lookup)
+DATASET 4 — URA Planning Area GeoJSON (Zone Lookup)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Source   : https://data.gov.sg/collections/2104/view
 Format   : GeoJSON — 55 planning area polygons with names
@@ -66,7 +56,9 @@ import os
 import requests
 from pathlib import Path
 
-RAW_DIR = Path("data/raw")
+from backend.paths import raw_dir
+
+RAW_DIR = raw_dir()
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 LTA_API_KEY = os.getenv("LTA_API_KEY", "")  # set in .env
@@ -83,15 +75,6 @@ def download_taxi_availability_snapshot() -> dict:
     resp = requests.get(url, headers=headers, timeout=10)
     resp.raise_for_status()
     return resp.json()
-
-
-def download_passenger_volume(year_month: str) -> None:
-    """
-    Request LTA passenger volume by OD for a given month (e.g. "202401").
-    Saves CSV to data/raw/passenger_volume_{year_month}.csv
-    Note: LTA sends a download link via email after request — manual step.
-    """
-    raise NotImplementedError
 
 
 def download_grab_posisi() -> None:

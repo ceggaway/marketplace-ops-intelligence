@@ -44,12 +44,13 @@ from backend.intervention.state_tracker import (
 from backend.modeling.demand_pressure import classify_pressure_level, score_demand_pressure
 from backend.modeling.imbalance import classify_imbalance_level, composite_imbalance_score
 from backend.modeling.shortage import compute_predicted_shortage
+from backend.paths import outputs_dir, processed_dir
 from backend.registry import model_registry as registry
 from backend.recommendations.baseline_policy import baseline_policy_reason, classify_policy_action
 
 import os
 
-OUTPUTS_DIR = Path("data/outputs")
+OUTPUTS_DIR = outputs_dir()
 
 # Risk classification thresholds — configurable via environment so ops can
 # tune sensitivity without code changes (e.g., lower RISK_HIGH_THRESHOLD
@@ -405,6 +406,21 @@ def _prepare_features(df: pd.DataFrame, schema_cols: list[str]) -> tuple[pd.Data
     X = df[available].copy()
     bool_cols = X.select_dtypes(include="bool").columns
     X[bool_cols] = X[bool_cols].astype(int)
+    object_cols = [
+        col for col in X.columns
+        if X[col].dtype == "object" or pd.api.types.is_string_dtype(X[col])
+    ]
+    for col in object_cols:
+        X[col] = (
+            X[col]
+            .replace({
+                True: 1, False: 0,
+                "True": 1, "False": 0,
+                "true": 1, "false": 0,
+                "TRUE": 1, "FALSE": 0,
+            })
+        )
+        X[col] = pd.to_numeric(X[col], errors="coerce")
     # Count NaN cells before filling — each represents a missing feature value
     # that falls back to 0, potentially degrading prediction quality.
     feature_nan_count = int(X.isna().sum().sum())
@@ -458,4 +474,143 @@ def _build_meta(
         # travel-time sources). Surfaced in pipeline.log so ops can see when
         # predictions may be less reliable due to incomplete feature inputs.
         "feature_nan_count":      feature_nan_count,
+    }
+
+
+# =============================================================================
+# H3 BATCH SCORING
+# =============================================================================
+
+def run_h3_batch(feature_df: pd.DataFrame | None = None) -> dict:
+    """
+    Score H3 hex cells using the active model.
+
+    If feature_df is not provided, reads from data/processed/h3_supply_features.csv.
+    Writes results to data/outputs/h3_predictions.csv.
+
+    The active model was trained on zone-level features.  Missing columns are
+    filled with 0 (neutral values) and a warning is logged so ops can see when
+    H3 predictions may be less reliable due to feature schema differences.
+    Retraining on H3-native features will improve accuracy.
+
+    Returns a run metadata dict.
+    """
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    run_id    = str(uuid.uuid4())[:8]
+    run_start = datetime.now(timezone.utc)
+
+    # ── Load features ────────────────────────────────────────────────────────
+    if feature_df is None:
+        h3_path = processed_dir() / "h3_supply_features.csv"
+        if not h3_path.exists():
+            return {
+                "run_id":     run_id,
+                "run_status": "no_data",
+                "message":    (
+                    "h3_supply_features.csv not found. "
+                    "Run the H3 feature pipeline first: "
+                    "from backend.preprocessing.pipeline import build_h3_features, save_h3_features"
+                ),
+            }
+        feature_df = pd.read_csv(h3_path)
+
+    if feature_df.empty:
+        return {"run_id": run_id, "run_status": "empty_input", "h3_cells_scored": 0}
+
+    # ── Model ────────────────────────────────────────────────────────────────
+    model       = registry.get_active_model()
+    active_meta = registry.get_active_version_meta()
+    schema_cols = active_meta.get("columns", [])
+
+    missing_cols = [c for c in schema_cols if c not in feature_df.columns] if schema_cols else []
+    if missing_cols:
+        import logging as _log
+        _log.getLogger(__name__).warning(
+            "H3 features missing %d model column(s): %s — filled with 0. "
+            "Retraining on H3-native features will improve accuracy.",
+            len(missing_cols), missing_cols[:10],
+        )
+        for col in missing_cols:
+            feature_df[col] = 0
+
+    X, feature_nan_count = _prepare_features(feature_df, schema_cols)
+    probs = model.predict_proba(X)[:, 1]
+
+    # ── Build result frame ───────────────────────────────────────────────────
+    id_cols = ["timestamp", "h3_cell"]
+    result_df = feature_df[id_cols].copy()
+    result_df["taxi_count"]            = feature_df.get("taxi_count",          pd.Series(0, index=feature_df.index))
+    result_df["baseline_supply"]       = feature_df.get("baseline_supply",     pd.Series(np.nan, index=feature_df.index))
+    result_df["depletion_risk_score"]  = probs.round(4)
+    result_df["demand_pressure_proxy"] = feature_df.get("demand_pressure_proxy", pd.Series(0.0, index=feature_df.index))
+    result_df["supply_gap"]            = feature_df.get("supply_gap",          pd.Series(0.0, index=feature_df.index))
+    result_df["imbalance_score"]       = feature_df.get("imbalance_score",     pd.Series(0.0, index=feature_df.index))
+    result_df["sparse_cell_flag"]      = feature_df.get("sparse_cell_flag",    pd.Series(False, index=feature_df.index))
+    result_df["parent_zone"]           = feature_df.get("parent_zone",         pd.Series("unknown", index=feature_df.index))
+
+    # predicted_shortage for H3 cells (same formula as zone-level)
+    from backend.modeling.shortage import compute_predicted_shortage, classify_severity_bucket
+    result_df["predicted_shortage"] = [
+        compute_predicted_shortage(dp, supply, dep, baseline)
+        for dp, supply, dep, baseline in zip(
+            result_df["demand_pressure_proxy"],
+            result_df["taxi_count"],
+            result_df["depletion_risk_score"],
+            result_df["baseline_supply"].fillna(result_df["taxi_count"]),
+        )
+    ]
+    result_df["predicted_shortage"] = result_df["predicted_shortage"].round(4)
+
+    # Severity bucket using same thresholds as zone pipeline
+    from backend.intervention import load_intervention_config
+    _icfg     = load_intervention_config()
+    _thresh   = _icfg.get("shortage_thresholds", {})
+    result_df["severity_bucket"] = result_df["predicted_shortage"].apply(
+        lambda v: classify_severity_bucket(v, _thresh)
+    )
+
+    # H3-conservative recommended action
+    from backend.spatial import load_spatial_config
+    from backend.spatial.h3_utils import select_h3_action, compute_h3_neighbor_surplus
+    _sc         = load_spatial_config()
+    _k          = int(_sc.get("h3_neighbor_k", 1))
+    _surplus_th = float(_sc.get("h3_rebalance_surplus_threshold", 5.0))
+    _buf        = float(_sc.get("h3_safety_buffer", 0.8))
+
+    # Build cell supply map for neighbor surplus checks
+    latest_ts = result_df["timestamp"].max() if "timestamp" in result_df.columns else None
+    latest    = result_df[result_df["timestamp"] == latest_ts] if latest_ts else result_df
+    cell_supply_map = {
+        row["h3_cell"]: {
+            "taxi_count":      float(row.get("taxi_count",      0)),
+            "baseline_supply": float(row.get("baseline_supply", 1)),
+        }
+        for _, row in latest.iterrows()
+        if pd.notna(row.get("h3_cell"))
+    }
+
+    actions, reasons = [], []
+    for _, row in result_df.iterrows():
+        cell    = row.get("h3_cell", "")
+        surplus = compute_h3_neighbor_surplus(cell, cell_supply_map, k=_k, safety_buffer=_buf) if cell else 0.0
+        action, reason = select_h3_action(
+            row["severity_bucket"], surplus, _surplus_th
+        )
+        actions.append(action)
+        reasons.append(reason)
+
+    result_df["recommended_action"] = actions
+    result_df["action_reason"]      = reasons
+
+    result_df.to_csv(OUTPUTS_DIR / "h3_predictions.csv", index=False)
+
+    latency_ms = int((datetime.now(timezone.utc) - run_start).total_seconds() * 1000)
+    return {
+        "run_id":             run_id,
+        "run_status":         "success",
+        "timestamp":          run_start.isoformat(),
+        "h3_cells_scored":    len(result_df),
+        "latency_ms":         latency_ms,
+        "feature_nan_count":  feature_nan_count,
+        "missing_model_cols": len(missing_cols),
     }

@@ -1,5 +1,14 @@
 # Global configuration — Singapore Marketplace Ops Intelligence
 
+spatial:
+  mode: "zone"                    # allowed: "zone" | "h3"
+  h3_resolution: 8                # H3 resolution 8 ≈ 0.46 km² per cell — fine enough for intra-zone views without excess sparsity
+  min_taxis_per_cell: 3           # cells below this median count are flagged as sparse
+  fallback_to_zone: true          # use parent-zone baseline when per-cell history is thin
+  h3_neighbor_k: 1                # k-ring size for neighbor surplus checks
+  h3_rebalance_surplus_threshold: 5.0   # minimum exportable surplus taxis across neighbors before recommending rebalance
+  h3_safety_buffer: 0.8           # fraction of baseline supply that must stay in a neighbor cell after export
+
 geography:
   country: Singapore
   timezone: Asia/Singapore
@@ -54,20 +63,48 @@ intervention:
     monitor_max: 0.25
     watch_max: 0.55
     severe_min: 0.85
+  action_governance:
+    monitor:
+      tier: 0
+      label: Monitor only
+      requires_approver: none
+    ops_alert:
+      tier: 1
+      label: Ops alert
+      requires_approver: ops_analyst
+    driver_comms:
+      tier: 2
+      label: Driver-comms recommendation
+      requires_approver: ops_lead
+    incentive:
+      tier: 3
+      label: Incentive proposal
+      requires_approver: ops_lead+finance
+    rebalance:
+      tier: 4
+      label: Rebalancing recommendation
+      requires_approver: ops_lead
+    rebalance_plus_incentive:
+      tier: 4
+      label: Rebalancing recommendation with incentive proposal
+      requires_approver: ops_lead+finance
   action_costs:
     monitor: 0.0
+    driver_comms: 0.1
     rebalance: 0.4
     incentive: 1.5
     rebalance_plus_incentive: 2.1
     ops_alert: 0.2
   action_uplifts:
     monitor: 0.0
+    driver_comms: 0.02
     rebalance: 0.18
     incentive: 0.22
     rebalance_plus_incentive: 0.34
     ops_alert: 0.05
   cooldown_windows_min:
     monitor: 0
+    driver_comms: 30
     rebalance: 45
     incentive: 60
     rebalance_plus_incentive: 90
@@ -79,6 +116,27 @@ intervention:
     shortage_reduction: 1.0
     cost: 0.35
     ops_alert_penalty: 0.6
+  roi_bridge:
+    default_depletion_minutes: 30
+    margin_assumption_sgd: 6.0
+    zone_commercial_weight:
+      cbd: 1.0
+      airport: 1.2
+      nightlife: 0.8
+      heartland: 0.4
+      other: 0.5
+
+causal_evaluation:
+  synthetic_control_gates:
+    pre_period_fit:
+      normalized_rmse_max: 0.25
+      mape_max: 0.15
+    donor_pool_size_min: 10
+    placebo_percentile_min: 0.90
+    minimum_post_period_min:
+      tier_1_2: 30
+      tier_3_4: 60
+    spillover_exclusion: same_subzone_plus_h3_k_ring_1
 
 monitoring:
   failed_row_pct_threshold: 0.20   # trigger rollback if >20% rows fail

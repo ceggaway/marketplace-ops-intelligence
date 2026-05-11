@@ -10,10 +10,35 @@ import Spinner from '../components/Spinner'
 import SparkLine from '../components/SparkLine'
 import { showToast } from '../components/toast-utils'
 
+type MetricKind = 'classification' | 'probability-error' | 'regression'
+
+type MetricDef = {
+  key: string
+  label: string
+  kind: MetricKind
+  higherIsBetter: boolean
+  target?: number
+  description: string
+}
+
+const METRICS: MetricDef[] = [
+  { key: 'roc_auc', label: 'ROC AUC', kind: 'classification', higherIsBetter: true, target: 0.85, description: 'Ranking quality across thresholds' },
+  { key: 'f1', label: 'F1', kind: 'classification', higherIsBetter: true, target: 0.70, description: 'Balance of precision and recall' },
+  { key: 'precision', label: 'Precision', kind: 'classification', higherIsBetter: true, target: 0.70, description: 'Share of fired alerts that are useful' },
+  { key: 'recall', label: 'Recall', kind: 'classification', higherIsBetter: true, target: 0.70, description: 'Share of real depletion events caught' },
+  { key: 'mae', label: 'MAE', kind: 'probability-error', higherIsBetter: false, description: 'Mean absolute probability error' },
+  { key: 'rmse', label: 'RMSE', kind: 'probability-error', higherIsBetter: false, description: 'Penalises large probability errors' },
+  { key: 'log_loss', label: 'Log Loss', kind: 'probability-error', higherIsBetter: false, description: 'Probability calibration penalty' },
+  { key: 'brier_score', label: 'Brier', kind: 'probability-error', higherIsBetter: false, description: 'Mean squared probability error' },
+  { key: 'r2', label: 'R2', kind: 'regression', higherIsBetter: true, description: 'Regression-style explained variance if available' },
+]
+
+const metricByKey = Object.fromEntries(METRICS.map(m => [m.key, m]))
+
 // ── PSI circular gauge ──────────────────────────────────────────────────────
 function PsiCircle({ psi }: { psi: number }) {
   const pct = Math.min(psi / 0.5, 1)
-  const color = psi >= 0.25 ? '#FF4D6D' : psi >= 0.10 ? '#F59E0B' : '#10D98A'
+  const color = psi >= 0.25 ? '#D95252' : psi >= 0.10 ? '#C97B30' : '#3BAF73'
   const r = 52, circ = 2 * Math.PI * r
   const dash = pct * circ
   return (
@@ -34,13 +59,13 @@ function PsiCircle({ psi }: { psi: number }) {
 // ── Real sparkline builders ───────────────────────────────────────────────────
 // Build sparkline from model versions (AUC / Precision / Recall across versions)
 function makeVersionSparkPoints(
-  versions: { trained_at?: string | null; metrics: Record<string, number> }[],
+  versions: { trained_at?: string | null; metrics: Record<string, number | null> }[],
   metricKey: string,
 ): { timestamp: string; value: number }[] {
   return [...versions]
-    .filter(v => v.trained_at && v.metrics[metricKey] != null)
+    .filter(v => v.trained_at && typeof v.metrics[metricKey] === 'number')
     .sort((a, b) => new Date(a.trained_at!).getTime() - new Date(b.trained_at!).getTime())
-    .map(v => ({ timestamp: v.trained_at!, value: v.metrics[metricKey] }))
+    .map(v => ({ timestamp: v.trained_at!, value: v.metrics[metricKey] as number }))
 }
 
 // Build PSI sparkline from pipeline run history (real per-run PSI values)
@@ -68,9 +93,38 @@ function psiColor(psi: number) {
   return COLORS.low
 }
 
+function metricValue(metrics: Record<string, number | null | undefined>, key: string) {
+  const value = metrics?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function formatMetric(value: number | null, key: string) {
+  if (value == null) return '—'
+  if (['train_rows', 'val_rows', 'n_test'].includes(key)) return value.toLocaleString()
+  return value.toFixed(4)
+}
+
+function metricColor(value: number | null, metric: MetricDef) {
+  if (value == null) return 'rgba(255,255,255,0.38)'
+  if (metric.target == null) return COLORS.primary
+  const pass = metric.higherIsBetter ? value >= metric.target : value <= metric.target
+  return pass ? COLORS.low : COLORS.medium
+}
+
+function metricDelta(candidate: number | null, baseline: number | null, metric: MetricDef) {
+  if (candidate == null || baseline == null) return null
+  const raw = candidate - baseline
+  return metric.higherIsBetter ? raw : -raw
+}
+
 export default function ModelHealth() {
   const [historyN, setHistoryN] = useState(20)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  const [selectedMetricKey, setSelectedMetricKey] = useState('roc_auc')
+  const [comparisonMetricKey, setComparisonMetricKey] = useState('f1')
+  const [performanceView, setPerformanceView] = useState<'trend' | 'compare'>('trend')
+  const [compareVersionA, setCompareVersionA] = useState('')
+  const [compareVersionB, setCompareVersionB] = useState('')
   const driftRef  = useRef<HTMLDivElement>(null)
   const historyRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -109,28 +163,75 @@ export default function ModelHealth() {
   const isLoading = lS || lR || lD
 
   const psi     = drift?.psi     ?? 0.0
-  const m       = (modelStatus?.training_metrics ?? {}) as Record<string, number>
+  const m       = (modelStatus?.training_metrics ?? {}) as Record<string, number | null>
 
-  const auc       = m.roc_auc   ?? null
-  const precision = m.precision ?? null
-  const recall    = m.recall    ?? null
+  const auc       = metricValue(m, 'roc_auc')
+  const precision = metricValue(m, 'precision')
+  const recall    = metricValue(m, 'recall')
+  const f1        = metricValue(m, 'f1')
+  const rmse      = metricValue(m, 'rmse')
+  const selectedMetric = metricByKey[selectedMetricKey] ?? METRICS[0]
+  const comparisonMetric = metricByKey[comparisonMetricKey] ?? METRICS[1]
+  const modelVersions = versions ?? []
+  const uniqueModelVersions = [...modelVersions]
+    .sort((a, b) => {
+      const statusRank = (status?: string) => status === 'active' ? 0 : status === 'candidate' ? 1 : 2
+      const rankDelta = statusRank(a.status) - statusRank(b.status)
+      if (rankDelta !== 0) return rankDelta
+      return new Date(b.trained_at ?? 0).getTime() - new Date(a.trained_at ?? 0).getTime()
+    })
+    .reduce<typeof modelVersions>((acc, version) => {
+      if (!acc.some(existing => existing.version_id === version.version_id)) acc.push(version)
+      return acc
+    }, [])
 
-  // AUC trend: one point per model version, sorted by trained_at.
-  // Each point shows the AUC that version achieved — real historical progression.
-  const aucTrend = versions
-    ? [...versions]
-        .filter(v => v.trained_at && v.metrics?.roc_auc != null)
+  // Metric trend: one point per model version, sorted by trained_at.
+  // This is intentionally close to MLflow's "compare runs by metric" workflow.
+  const metricTrend = uniqueModelVersions
+        .filter(v => v.trained_at && typeof v.metrics?.[selectedMetric.key] === 'number')
         .sort((a, b) => new Date(a.trained_at!).getTime() - new Date(b.trained_at!).getTime())
         .map(v => ({
           date: new Date(v.trained_at!).toLocaleDateString('en-SG', { day: '2-digit', month: 'short' }),
-          auc:  v.metrics.roc_auc as number,
+          version: v.version_id,
+          status: v.status,
+          value: v.metrics[selectedMetric.key] as number,
         }))
-    : []
 
   // Dynamic Y-axis bounds so the chart fits real AUC values
-  const aucValues = aucTrend.map(p => p.auc)
-  const aucMin = aucValues.length > 0 ? Math.max(0,   Math.min(...aucValues) - 0.02) : 0.80
-  const aucMax = aucValues.length > 0 ? Math.min(1.0, Math.max(...aucValues) + 0.02) : 1.00
+  const metricValues = metricTrend.map(p => p.value)
+  const metricPad = selectedMetric.higherIsBetter ? 0.02 : 0.01
+  const metricMin = metricValues.length > 0 ? Math.max(0, Math.min(...metricValues) - metricPad) : 0
+  const metricMax = metricValues.length > 0
+    ? Math.min(selectedMetric.kind === 'classification' ? 1 : Math.max(...metricValues) + metricPad, Math.max(...metricValues) + metricPad)
+    : 1
+  const activeVersion = uniqueModelVersions.find(v => v.version_id === modelStatus?.active_version)
+  const baselineVersion = activeVersion ?? uniqueModelVersions[0]
+  const sortedVersions = [...uniqueModelVersions].sort((a, b) => new Date(b.trained_at ?? 0).getTime() - new Date(a.trained_at ?? 0).getTime())
+  const defaultCompareA = activeVersion?.version_id ?? sortedVersions[0]?.version_id ?? ''
+  const defaultCompareB = sortedVersions.find(v => v.version_id !== defaultCompareA)?.version_id ?? defaultCompareA
+  const compareVersionAId = compareVersionA || defaultCompareA
+  const compareVersionBId = compareVersionB || defaultCompareB
+  const modelA = sortedVersions.find(v => v.version_id === compareVersionAId)
+  const modelB = sortedVersions.find(v => v.version_id === compareVersionBId)
+  const compareMetricRows = METRICS.map(metric => {
+    const a = modelA ? metricValue(modelA.metrics, metric.key) : null
+    const b = modelB ? metricValue(modelB.metrics, metric.key) : null
+    return {
+      metric,
+      a,
+      b,
+      rawDelta: a != null && b != null ? b - a : null,
+      qualityDelta: metricDelta(b, a, metric),
+    }
+  })
+  const chartMetricRows = compareMetricRows.filter(row => row.a != null || row.b != null)
+  const chartAData = chartMetricRows
+    .filter(row => row.a != null)
+    .map(row => ({ metric: row.metric.label, value: row.a as number }))
+  const chartBData = chartMetricRows
+    .filter(row => row.b != null)
+    .map(row => ({ metric: row.metric.label, value: row.b as number }))
+  const selectedCompareMetricRow = compareMetricRows.find(row => row.metric.key === selectedMetric.key)
 
   // Sorted run history — guard against null/undefined timestamps
   const sortedHistory = history
@@ -161,14 +262,14 @@ export default function ModelHealth() {
           </div>
 
           {/* Version dropdown */}
-          {versionsOpen && versions && versions.length > 0 && (
+          {versionsOpen && uniqueModelVersions.length > 0 && (
             <div style={{
               position: 'absolute', top: '110%', left: 0, zIndex: 200,
               background: 'rgba(6,13,26,0.97)', border: '1px solid rgba(99,140,255,0.18)',
               borderRadius: 10, minWidth: 280, boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
               backdropFilter: 'blur(12px)', overflow: 'hidden',
             }}>
-              {versions.map(v => {
+              {uniqueModelVersions.map(v => {
                 const isActive = v.version_id === modelStatus?.active_version
                 const isCandidate = v.version_id === modelStatus?.candidate_version
                 const statusColor = isActive ? COLORS.low : isCandidate ? COLORS.primary : 'rgba(255,255,255,0.28)'
@@ -244,7 +345,7 @@ export default function ModelHealth() {
       {isLoading && <Spinner />}
 
       {/* ── Row 1: KPI cards ────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 12 }}>
 
         {/* AUC */}
         <GlassCard accentColor={COLORS.primary} hover={false} style={{ padding: '16px 18px' }}>
@@ -260,6 +361,24 @@ export default function ModelHealth() {
             </div>
             {versions && versions.length > 1 && (
               <SparkLine data={makeVersionSparkPoints(versions, 'roc_auc')} color={COLORS.primary} height={34} width={64} />
+            )}
+          </div>
+        </GlassCard>
+
+        {/* F1 */}
+        <GlassCard accentColor={metricColor(f1, metricByKey.f1)} hover={false} style={{ padding: '16px 18px' }}>
+          <div style={{ ...SECTION_LABEL, marginBottom: 6 }}>F1</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
+            <div>
+              <div style={{ fontSize: '1.55rem', fontWeight: 300, color: 'rgba(255,255,255,0.92)', lineHeight: 1.1 }}>
+                {formatMetric(f1, 'f1')}
+              </div>
+              <div style={{ marginTop: 6, fontSize: '0.63rem', color: 'rgba(255,255,255,0.35)' }}>
+                Best threshold balance
+              </div>
+            </div>
+            {versions && versions.length > 1 && (
+              <SparkLine data={makeVersionSparkPoints(versions, 'f1')} color={COLORS.low} height={34} width={64} />
             )}
           </div>
         </GlassCard>
@@ -296,6 +415,24 @@ export default function ModelHealth() {
             </div>
             {versions && versions.length > 1 && (
               <SparkLine data={makeVersionSparkPoints(versions, 'recall')} color={COLORS.low} height={34} width={64} />
+            )}
+          </div>
+        </GlassCard>
+
+        {/* RMSE */}
+        <GlassCard accentColor={COLORS.medium} hover={false} style={{ padding: '16px 18px' }}>
+          <div style={{ ...SECTION_LABEL, marginBottom: 6 }}>RMSE</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
+            <div>
+              <div style={{ fontSize: '1.55rem', fontWeight: 300, color: 'rgba(255,255,255,0.92)', lineHeight: 1.1 }}>
+                {formatMetric(rmse, 'rmse')}
+              </div>
+              <div style={{ marginTop: 6, fontSize: '0.63rem', color: 'rgba(255,255,255,0.35)' }}>
+                Probability error
+              </div>
+            </div>
+            {versions && versions.length > 1 && (
+              <SparkLine data={makeVersionSparkPoints(versions, 'rmse')} color={COLORS.medium} height={34} width={64} />
             )}
           </div>
         </GlassCard>
@@ -431,27 +568,93 @@ export default function ModelHealth() {
 
         {/* RIGHT: Performance Trend */}
         <GlassCard hover={false} style={{ padding: '20px 22px' }}>
-          <div style={{ ...SECTION_LABEL, marginBottom: 8 }}>Performance Trend</div>
-
-          {/* Legend */}
-          <div style={{ display: 'flex', gap: 18, marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <svg width={20} height={10}><line x1={0} y1={5} x2={20} y2={5} stroke={COLORS.primary} strokeWidth={2} /></svg>
-              <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>AUC</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
+            <div>
+              <div style={{ ...SECTION_LABEL, marginBottom: 4 }}>Performance Trend</div>
+              <div style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.42)' }}>
+                Compare model versions by classification and error metrics.
+              </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <svg width={20} height={10}><line x1={0} y1={5} x2={20} y2={5} stroke="rgba(255,255,255,0.50)" strokeWidth={1.5} strokeDasharray="4 2" /></svg>
-              <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>Target (0.85)</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <div style={{
+                display: 'inline-flex',
+                padding: 2,
+                borderRadius: 8,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.10)',
+              }}>
+                {[
+                  { key: 'trend', label: 'Trend' },
+                  { key: 'compare', label: 'Compare Models' },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setPerformanceView(tab.key as 'trend' | 'compare')}
+                    style={{
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '5px 9px',
+                      background: performanceView === tab.key ? 'rgba(69,120,200,0.22)' : 'transparent',
+                      color: performanceView === tab.key ? COLORS.primary : 'rgba(255,255,255,0.52)',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <select
+                value={selectedMetricKey}
+                onChange={e => setSelectedMetricKey(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: 'rgba(255,255,255,0.82)',
+                  borderRadius: 8,
+                  padding: '6px 10px',
+                  fontSize: '0.72rem',
+                  outline: 'none',
+                }}
+              >
+                <optgroup label="Classification">
+                  {METRICS.filter(metric => metric.kind === 'classification').map(metric => (
+                    <option key={metric.key} value={metric.key}>{metric.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Probability / Regression">
+                  {METRICS.filter(metric => metric.kind !== 'classification').map(metric => (
+                    <option key={metric.key} value={metric.key}>{metric.label}</option>
+                  ))}
+                </optgroup>
+              </select>
             </div>
           </div>
 
-          {aucTrend.length === 0 && (
+          <div style={{ display: 'flex', gap: 18, marginBottom: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width={20} height={10}><line x1={0} y1={5} x2={20} y2={5} stroke={COLORS.primary} strokeWidth={2} /></svg>
+              <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>{selectedMetric.label}</span>
+            </div>
+            {selectedMetric.target != null && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <svg width={20} height={10}><line x1={0} y1={5} x2={20} y2={5} stroke="rgba(255,255,255,0.50)" strokeWidth={1.5} strokeDasharray="4 2" /></svg>
+                <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)' }}>Target ({selectedMetric.target.toFixed(2)})</span>
+              </div>
+            )}
+            <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.36)' }}>
+              {selectedMetric.higherIsBetter ? 'Higher is better' : 'Lower is better'} · {selectedMetric.description}
+            </span>
+          </div>
+
+          {performanceView === 'trend' && metricTrend.length === 0 && (
             <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.28)', fontSize: '0.78rem' }}>
-              No model versions trained yet — run <code style={{ fontSize: '0.72rem' }}>make train</code> first
+              No {selectedMetric.label} values available for model versions.
             </div>
           )}
-          {aucTrend.length > 0 && <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={aucTrend} margin={{ top: 6, right: 12, bottom: 0, left: -10 }}>
+          {performanceView === 'trend' && metricTrend.length > 0 && <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={metricTrend} margin={{ top: 6, right: 12, bottom: 0, left: -10 }}>
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.35)' }}
@@ -459,26 +662,28 @@ export default function ModelHealth() {
                 axisLine={false}
               />
               <YAxis
-                domain={[aucMin, aucMax]}
+                domain={[metricMin, metricMax]}
                 tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.35)' }}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={v => v.toFixed(2)}
+                tickFormatter={v => Number(v).toFixed(2)}
               />
               <Tooltip
                 contentStyle={TOOLTIP_STYLE}
                 labelStyle={TOOLTIP_LABEL_STYLE}
-                formatter={(v) => [Number(v).toFixed(4), 'AUC']}
+                formatter={(v) => [Number(v).toFixed(4), selectedMetric.label]}
               />
-              <ReferenceLine
-                y={0.85}
-                stroke="rgba(255,255,255,0.45)"
-                strokeDasharray="6 3"
-                strokeWidth={1.5}
-              />
+              {selectedMetric.target != null && (
+                <ReferenceLine
+                  y={selectedMetric.target}
+                  stroke="rgba(255,255,255,0.45)"
+                  strokeDasharray="6 3"
+                  strokeWidth={1.5}
+                />
+              )}
               <Line
                 type="monotone"
-                dataKey="auc"
+                dataKey="value"
                 stroke={COLORS.primary}
                 strokeWidth={2}
                 dot={{ r: 3, fill: COLORS.primary, strokeWidth: 0 }}
@@ -487,21 +692,238 @@ export default function ModelHealth() {
             </LineChart>
           </ResponsiveContainer>}
 
+          {performanceView === 'compare' && (
+            <div style={{ minHeight: 180, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {[
+                  { label: 'Model A', value: compareVersionAId, setter: setCompareVersionA, model: modelA, color: 'rgba(148,163,184,0.95)' },
+                  { label: 'Model B', value: compareVersionBId, setter: setCompareVersionB, model: modelB, color: COLORS.primary },
+                ].map(item => (
+                  <div key={item.label} style={{
+                    padding: '9px 11px',
+                    borderRadius: 9,
+                    background: 'rgba(69,120,200,0.07)',
+                    border: `1px solid ${item.color}44`,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 7 }}>
+                      <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.34)', textTransform: 'uppercase', letterSpacing: '0.10em' }}>
+                        {item.label}
+                      </div>
+                      {item.model && <Badge label={item.model.status} color={item.model.status === 'active' ? COLORS.low : item.model.status === 'candidate' ? COLORS.primary : 'rgba(255,255,255,0.42)'} />}
+                    </div>
+                    <select
+                      value={item.value}
+                      onChange={e => item.setter(e.target.value)}
+                      style={{
+                        width: '100%',
+                        background: 'rgba(255,255,255,0.06)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        color: 'rgba(255,255,255,0.84)',
+                        borderRadius: 8,
+                        padding: '6px 8px',
+                        fontSize: '0.72rem',
+                        outline: 'none',
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      {sortedVersions.map(v => (
+                        <option key={`${item.label}-${v.version_id}`} value={v.version_id}>
+                          {v.version_id} · {v.status}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.32)', marginTop: 6 }}>
+                      {item.model?.trained_at ? fmtDate(item.model.trained_at) : 'No version selected'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {sortedVersions.length < 2 ? (
+                <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.28)', fontSize: '0.78rem' }}>
+                  Need at least two model versions to compare.
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {[
+                      { slot: 'model-a', title: modelA?.version_id ?? 'Model A', data: chartAData, color: 'rgba(148,163,184,0.95)' },
+                      { slot: 'model-b', title: modelB?.version_id ?? 'Model B', data: chartBData, color: COLORS.primary },
+                    ].map(chart => (
+                      <div key={chart.slot} style={{ height: 170, padding: '8px 4px 2px', borderRadius: 9, background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ fontSize: '0.62rem', fontFamily: 'monospace', color: 'rgba(255,255,255,0.62)', margin: '0 8px 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {chart.title}
+                        </div>
+                        <ResponsiveContainer width="100%" height={140}>
+                          <LineChart data={chart.data} margin={{ top: 4, right: 8, bottom: 0, left: -24 }}>
+                            <XAxis dataKey="metric" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.34)' }} tickLine={false} axisLine={false} interval={0} />
+                            <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.34)' }} tickLine={false} axisLine={false} tickFormatter={v => Number(v).toFixed(2)} />
+                            <Tooltip
+                              contentStyle={TOOLTIP_STYLE}
+                              labelStyle={TOOLTIP_LABEL_STYLE}
+                              formatter={(v) => [Number(v).toFixed(4), 'Metric']}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="value"
+                              stroke={chart.color}
+                              strokeWidth={2}
+                              dot={{ r: 3, fill: chart.color, strokeWidth: 0 }}
+                              activeDot={{ r: 5, fill: chart.color }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                    {compareMetricRows
+                      .filter(row => ['roc_auc', 'f1', 'precision', 'recall'].includes(row.metric.key))
+                      .map(row => {
+                        const color = row.qualityDelta == null || Math.abs(row.qualityDelta) < 0.0001
+                          ? 'rgba(255,255,255,0.42)'
+                          : row.qualityDelta > 0 ? COLORS.low : COLORS.high
+                        return (
+                          <div key={row.metric.key} style={{ padding: '9px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                            <div style={{ fontSize: '0.56rem', color: 'rgba(255,255,255,0.32)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>
+                              {row.metric.label}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: '0.68rem', color: 'rgba(255,255,255,0.62)' }}>
+                              <span>{formatMetric(row.a, row.metric.key)}</span>
+                              <span>{formatMetric(row.b, row.metric.key)}</span>
+                            </div>
+                            <div style={{ marginTop: 4, color, fontSize: '0.74rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                              {row.rawDelta == null ? '—' : `${row.rawDelta >= 0 ? '+' : ''}${row.rawDelta.toFixed(4)}`}
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Annotation */}
-          <div style={{ marginTop: 8, fontSize: '0.65rem', color: 'rgba(255,255,255,0.42)', textAlign: 'right' }}>
-            Latest · AUC: <span style={{ color: COLORS.primary, fontWeight: 500 }}>{auc != null ? auc.toFixed(4) : '—'}</span>
+          <div style={{ marginTop: 8, fontSize: '0.65rem', color: 'rgba(255,255,255,0.42)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <span>{performanceView === 'trend' ? `${metricTrend.length} version${metricTrend.length === 1 ? '' : 's'} with ${selectedMetric.label}` : `${modelA?.version_id ?? 'Model A'} vs ${modelB?.version_id ?? 'Model B'}`}</span>
+            <span>{selectedMetric.label} delta: <span style={{ color: selectedCompareMetricRow?.qualityDelta == null ? 'rgba(255,255,255,0.42)' : selectedCompareMetricRow.qualityDelta >= 0 ? COLORS.low : COLORS.high, fontWeight: 500 }}>{selectedCompareMetricRow?.rawDelta == null ? '—' : `${selectedCompareMetricRow.rawDelta >= 0 ? '+' : ''}${selectedCompareMetricRow.rawDelta.toFixed(4)}`}</span></span>
           </div>
 
         </GlassCard>
       </div>
 
-      {/* ── Row 3: Run History ───────────────────────────────────────────── */}
+      {/* ── Row 3: Model Version Comparison ─────────────────────────────── */}
+      <GlassCard hover={false} style={{ padding: '20px 22px', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+          <div>
+            <div style={{ ...SECTION_LABEL, marginBottom: 4 }}>Model Version Comparison</div>
+            <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.40)' }}>
+              MLflow-style run comparison using the metrics stored in the file registry.
+            </div>
+          </div>
+          <select
+            value={comparisonMetricKey}
+            onChange={e => setComparisonMetricKey(e.target.value)}
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.82)',
+              borderRadius: 8,
+              padding: '6px 10px',
+              fontSize: '0.72rem',
+              outline: 'none',
+            }}
+          >
+            {METRICS.map(metric => (
+              <option key={metric.key} value={metric.key}>{metric.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                {[
+                  'VERSION',
+                  'STATUS',
+                  'TRAINED',
+                  'ROC AUC',
+                  'F1',
+                  'PRECISION',
+                  'RECALL',
+                  'MAE',
+                  'RMSE',
+                  `${comparisonMetric.label.toUpperCase()} DELTA`,
+                ].map(h => (
+                  <th key={h} style={{
+                    padding: '8px 12px', textAlign: 'left',
+                    fontSize: '0.57rem', fontWeight: 700, letterSpacing: '0.10em',
+                    textTransform: 'uppercase', color: 'rgba(255,255,255,0.30)',
+                    whiteSpace: 'nowrap',
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedVersions.length > 0 ? sortedVersions.map(v => {
+                const statusColor = v.status === 'active' ? COLORS.low : v.status === 'candidate' ? COLORS.primary : 'rgba(255,255,255,0.42)'
+                const baselineMetric = baselineVersion ? metricValue(baselineVersion.metrics, comparisonMetric.key) : null
+                const currentMetric = metricValue(v.metrics, comparisonMetric.key)
+                const delta = metricDelta(currentMetric, baselineMetric, comparisonMetric)
+                return (
+                  <tr key={v.version_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.78)', whiteSpace: 'nowrap' }}>
+                      {v.version_id}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <Badge label={v.status} color={statusColor} />
+                    </td>
+                    <td style={{ padding: '10px 12px', color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap' }}>
+                      {v.trained_at ? fmtDate(v.trained_at) : '—'}
+                    </td>
+                    {['roc_auc', 'f1', 'precision', 'recall', 'mae', 'rmse'].map(key => {
+                      const metric = metricByKey[key] ?? comparisonMetric
+                      const value = metricValue(v.metrics, key)
+                      return (
+                        <td key={key} style={{ padding: '10px 12px', color: metricColor(value, metric), fontVariantNumeric: 'tabular-nums' }}>
+                          {formatMetric(value, key)}
+                        </td>
+                      )
+                    })}
+                    <td style={{
+                      padding: '10px 12px',
+                      color: delta == null ? 'rgba(255,255,255,0.30)' : delta >= 0 ? COLORS.low : COLORS.high,
+                      fontVariantNumeric: 'tabular-nums',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(4)}`}
+                    </td>
+                  </tr>
+                )
+              }) : (
+                <tr>
+                  <td colSpan={10} style={{ padding: '28px 14px', textAlign: 'center', color: 'rgba(255,255,255,0.28)', fontSize: '0.80rem' }}>
+                    No model versions available — run training to populate the registry.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </GlassCard>
+
+      {/* ── Row 4: Operational Run History ──────────────────────────────── */}
       <div ref={historyRef}><GlassCard hover={false} style={{ padding: '20px 22px', overflow: 'hidden' }}>
         {/* Section header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
           <div>
-            <div style={{ ...SECTION_LABEL, marginBottom: 4 }}>Run History</div>
-            <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.40)' }}>Recent training runs and system events</div>
+            <div style={{ ...SECTION_LABEL, marginBottom: 4 }}>Operational Run History</div>
+            <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.40)' }}>
+              Recent scoring runs and pipeline events. Model-version comparison above is the experiment-tracking view.
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

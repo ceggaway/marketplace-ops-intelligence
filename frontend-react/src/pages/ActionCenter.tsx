@@ -140,9 +140,9 @@ function ActionRow({
       style={{
         display: 'flex', alignItems: 'center', gap: 14,
         padding: '14px 18px', borderRadius: 12, marginBottom: 8,
-        background: selected ? 'rgba(79,142,247,0.08)' : 'rgba(255,255,255,0.03)',
+        background: selected ? 'rgba(69,120,200,0.08)' : 'rgba(255,255,255,0.03)',
         border: selected
-          ? '1px solid rgba(79,142,247,0.30)'
+          ? '1px solid rgba(69,120,200,0.30)'
           : '1px solid rgba(255,255,255,0.07)',
         borderLeft: selected ? `3px solid ${COLORS.primary}` : `3px solid ${color}`,
         cursor: 'pointer', transition: 'all 0.18s',
@@ -260,7 +260,7 @@ function DetailPanel({
           {drivers.slice(0, 5).map(d => (
             <span key={d} style={{
               padding: '4px 10px', borderRadius: 20,
-              background: 'rgba(79,142,247,0.12)', border: '1px solid rgba(79,142,247,0.28)',
+              background: 'rgba(69,120,200,0.12)', border: '1px solid rgba(69,120,200,0.28)',
               fontSize: '0.68rem', fontWeight: 500, color: COLORS.primary,
             }}>
               {d}
@@ -274,7 +274,7 @@ function DetailPanel({
         <div style={{ ...SECTION_LABEL, marginBottom: 10 }}>Expected Impact</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
           <div style={{
-            background: 'rgba(16,217,138,0.08)', border: '1px solid rgba(16,217,138,0.20)',
+            background: 'rgba(59,175,115,0.08)', border: '1px solid rgba(59,175,115,0.20)',
             borderRadius: 10, padding: '10px 12px',
           }}>
             <div style={{ fontSize: '1.35rem', fontWeight: 700, color: COLORS.low, lineHeight: 1 }}>
@@ -285,7 +285,7 @@ function DetailPanel({
             </div>
           </div>
           <div style={{
-            background: 'rgba(79,142,247,0.08)', border: '1px solid rgba(79,142,247,0.20)',
+            background: 'rgba(69,120,200,0.08)', border: '1px solid rgba(69,120,200,0.20)',
             borderRadius: 10, padding: '10px 12px',
           }}>
             <div style={{ fontSize: '1.35rem', fontWeight: 700, color: COLORS.primary, lineHeight: 1 }}>
@@ -296,10 +296,10 @@ function DetailPanel({
             </div>
           </div>
           <div style={{
-            background: 'rgba(255,193,7,0.08)', border: '1px solid rgba(255,193,7,0.20)',
+            background: 'rgba(201,123,48,0.08)', border: '1px solid rgba(201,123,48,0.20)',
             borderRadius: 10, padding: '10px 12px',
           }}>
-            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#ffc107', lineHeight: 1 }}>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#C97B30', lineHeight: 1 }}>
               {rec.estimated_cost_sgd != null ? `S$${rec.estimated_cost_sgd.toFixed(2)}` : '—'}
             </div>
             <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
@@ -323,7 +323,7 @@ function DetailPanel({
 
       {(rec.expected_recovery_rate != null || rec.expected_improvement_rate != null || rec.policy_rank_reason) && (
         <div style={{
-          background: 'rgba(79,142,247,0.05)', border: '1px solid rgba(79,142,247,0.16)',
+          background: 'rgba(69,120,200,0.05)', border: '1px solid rgba(69,120,200,0.16)',
           borderRadius: 10, padding: '12px 14px',
         }}>
           <div style={{ ...SECTION_LABEL, marginBottom: 10 }}>Learned Policy Signal</div>
@@ -421,17 +421,17 @@ function DetailPanel({
             </div>
           )}
           {rec.eta_minutes != null && (
-            <div style={{ background: 'rgba(255,200,60,0.06)', border: '1px solid rgba(255,200,60,0.18)', borderRadius: 8, padding: '8px 10px' }}>
+            <div style={{ background: 'rgba(201,123,48,0.06)', border: '1px solid rgba(201,123,48,0.18)', borderRadius: 8, padding: '8px 10px' }}>
               <div style={{ ...MINI_LABEL, marginBottom: 4 }}>Time to Critical</div>
-              <div style={{ fontSize: '0.72rem', color: '#ffc83c', fontWeight: 700 }}>
+              <div style={{ fontSize: '0.72rem', color: '#C97B30', fontWeight: 700 }}>
                 ~{rec.eta_minutes} min
               </div>
             </div>
           )}
           {rec.intervention_window && (
             <div style={{
-              background: rec.intervention_window === 'too_late' ? 'rgba(255,80,80,0.08)' : rec.intervention_window === 'tight' ? 'rgba(255,150,50,0.08)' : 'rgba(16,217,138,0.06)',
-              border: `1px solid ${rec.intervention_window === 'too_late' ? 'rgba(255,80,80,0.25)' : rec.intervention_window === 'tight' ? 'rgba(255,150,50,0.25)' : 'rgba(16,217,138,0.18)'}`,
+              background: rec.intervention_window === 'too_late' ? 'rgba(217,82,82,0.08)' : rec.intervention_window === 'tight' ? 'rgba(201,123,48,0.08)' : 'rgba(59,175,115,0.06)',
+              border: `1px solid ${rec.intervention_window === 'too_late' ? 'rgba(217,82,82,0.25)' : rec.intervention_window === 'tight' ? 'rgba(201,123,48,0.25)' : 'rgba(59,175,115,0.18)'}`,
               borderRadius: 8, padding: '8px 10px',
             }}>
               <div style={{ ...MINI_LABEL, marginBottom: 4 }}>Action Window</div>
@@ -445,8 +445,8 @@ function DetailPanel({
 
       {/* Engine v2: network warning */}
       {rec.network_warning && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'rgba(255,170,50,0.07)', border: '1px solid rgba(255,170,50,0.22)', borderRadius: 8, padding: '8px 12px' }}>
-          <AlertTriangle size={13} color="#ffaa32" style={{ flexShrink: 0, marginTop: 1 }} />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'rgba(201,123,48,0.07)', border: '1px solid rgba(201,123,48,0.22)', borderRadius: 8, padding: '8px 12px' }}>
+          <AlertTriangle size={13} color="#C97B30" style={{ flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.72)', lineHeight: 1.5 }}>{rec.network_warning}</div>
         </div>
       )}
@@ -638,8 +638,8 @@ export default function ActionCenter() {
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   padding: '7px 14px', borderRadius: 20,
                   fontSize: '0.78rem', fontWeight: active ? 600 : 400,
-                  background: active ? 'rgba(79,142,247,0.16)' : 'rgba(255,255,255,0.06)',
-                  border: `1px solid ${active ? 'rgba(79,142,247,0.35)' : 'rgba(255,255,255,0.10)'}`,
+                  background: active ? 'rgba(69,120,200,0.16)' : 'rgba(255,255,255,0.06)',
+                  border: `1px solid ${active ? 'rgba(69,120,200,0.35)' : 'rgba(255,255,255,0.10)'}`,
                   color: active ? COLORS.primary : 'rgba(255,255,255,0.55)',
                   cursor: 'pointer', transition: 'all 0.18s', fontFamily: 'Inter, sans-serif',
                 }}
@@ -647,7 +647,7 @@ export default function ActionCenter() {
                 {tab.label}
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  background: active ? 'rgba(79,142,247,0.25)' : 'rgba(255,255,255,0.12)',
+                  background: active ? 'rgba(69,120,200,0.25)' : 'rgba(255,255,255,0.12)',
                   borderRadius: 20, padding: '1px 7px',
                   fontSize: '0.65rem', fontWeight: 700,
                   color: active ? COLORS.primary : 'rgba(255,255,255,0.45)',
@@ -741,8 +741,8 @@ export default function ActionCenter() {
                     onClick={() => setSortOpen(o => !o)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 6,
-                      background: sortOpen ? 'rgba(79,142,247,0.10)' : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${sortOpen ? 'rgba(79,142,247,0.30)' : 'rgba(255,255,255,0.10)'}`,
+                      background: sortOpen ? 'rgba(69,120,200,0.10)' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${sortOpen ? 'rgba(69,120,200,0.30)' : 'rgba(255,255,255,0.10)'}`,
                       borderRadius: 10, padding: '8px 12px',
                       fontSize: '0.72rem', color: sortOpen ? COLORS.primary : 'rgba(255,255,255,0.55)',
                       cursor: 'pointer', fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap',
@@ -764,7 +764,7 @@ export default function ActionCenter() {
                           style={{
                             display: 'block', width: '100%', textAlign: 'left',
                             padding: '8px 14px',
-                            background: sortBy === opt.value ? 'rgba(79,142,247,0.14)' : 'transparent',
+                            background: sortBy === opt.value ? 'rgba(69,120,200,0.14)' : 'transparent',
                             border: 'none',
                             color: sortBy === opt.value ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.56)',
                             fontSize: '0.76rem', cursor: 'pointer', fontFamily: 'Inter, sans-serif',
@@ -778,7 +778,7 @@ export default function ActionCenter() {
                     </div>
                   )}
                 </div>
-                <button className="btn-glass" onClick={() => setShowFilters(f => !f)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', flexShrink: 0, background: showFilters ? 'rgba(79,142,247,0.14)' : undefined, border: showFilters ? '1px solid rgba(79,142,247,0.35)' : undefined }}>
+                <button className="btn-glass" onClick={() => setShowFilters(f => !f)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', flexShrink: 0, background: showFilters ? 'rgba(69,120,200,0.14)' : undefined, border: showFilters ? '1px solid rgba(69,120,200,0.35)' : undefined }}>
                   <SlidersHorizontal size={13} />
                   Filters
                 </button>
@@ -786,7 +786,7 @@ export default function ActionCenter() {
 
               {/* Expandable filter panel */}
               {showFilters && (
-                <div style={{ background: 'rgba(79,142,247,0.06)', border: '1px solid rgba(79,142,247,0.18)', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+                <div style={{ background: 'rgba(69,120,200,0.06)', border: '1px solid rgba(69,120,200,0.18)', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: '0.70rem', color: 'rgba(255,255,255,0.50)' }}>Risk score min</span>
                     <input type="range" min={0} max={1} step={0.05} value={minScore}

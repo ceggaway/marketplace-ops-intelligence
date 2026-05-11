@@ -504,7 +504,7 @@ export default function Overview() {
                       onClick={() => { setTimeRange(r); setTimeRangeOpen(false) }}
                       style={{
                         display: 'block', width: '100%', textAlign: 'left',
-                        padding: '8px 14px', background: r === timeRange ? 'rgba(79,142,247,0.14)' : 'transparent',
+                        padding: '8px 14px', background: r === timeRange ? 'rgba(69,120,200,0.14)' : 'transparent',
                         border: 'none', color: r === timeRange ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.56)',
                         fontSize: '0.76rem', cursor: 'pointer', fontFamily: 'Inter, sans-serif',
                         transition: 'background 0.15s',

@@ -87,6 +87,12 @@ def test_build_features_no_nulls_in_supply_lag_cols():
         assert df[col].isna().sum() == 0, f"{col} has nulls after build_features"
 
 
+def test_build_features_fills_weekly_lag_on_short_dataset():
+    df = build_features(_make_df(n_days=2))
+    assert "taxi_lag_168h" in df.columns
+    assert df["taxi_lag_168h"].isna().sum() == 0
+
+
 # ── Time features ─────────────────────────────────────────────────────────────
 
 def test_hour_of_day_range():

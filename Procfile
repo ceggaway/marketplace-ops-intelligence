@@ -1,0 +1,4 @@
+web: python -m uvicorn backend.api.main:app --host 0.0.0.0 --port ${PORT:-8000}
+poller: python -m backend.ingestion.lta_poller
+monitor: python scripts/run_monitoring.py --loop --interval ${MONITOR_INTERVAL_SEC:-300}
+release: python scripts/bootstrap_model.py && python scripts/deploy_check.py --require-frontend-build

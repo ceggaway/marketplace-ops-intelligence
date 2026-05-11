@@ -25,6 +25,10 @@ shap>=0.45
 jupyter>=1.0
 nbconvert>=7.0
 
+# ── Spatial / H3 ─────────────────────────────────
+h3>=4.0                # H3 hierarchical spatial indexing for hex-level supply aggregation
+shapely>=2.0           # polygon containment for H3→zone parent mapping (optional but recommended)
+
 # ── Utilities ─────────────────────────────────────
 pyyaml>=6.0
 joblib>=1.4            # model serialisation

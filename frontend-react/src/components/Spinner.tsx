@@ -4,8 +4,8 @@ export default function Spinner({ size = 32 }: { size?: number }) {
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 40 }}>
       <div style={{
         width: size, height: size, borderRadius: '50%',
-        border: '2px solid rgba(249,168,192,0.20)',
-        borderTopColor: '#F9A8C0',
+        border: '2px solid rgba(69,120,200,0.20)',
+        borderTopColor: '#4578C8',
         animation: 'spin 0.7s linear infinite',
       }} />
     </div>

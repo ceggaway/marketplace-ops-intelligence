@@ -20,8 +20,9 @@ import numpy as np
 import pandas as pd
 
 from backend.monitoring.alerting import emit_alert
+from backend.paths import outputs_dir
 
-OUTPUTS_DIR         = Path("data/outputs")
+OUTPUTS_DIR         = outputs_dir()
 PSI_ALERT_THRESHOLD = 0.25
 PSI_WARN_THRESHOLD  = 0.10
 

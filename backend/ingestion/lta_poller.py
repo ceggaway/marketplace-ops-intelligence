@@ -67,10 +67,11 @@ except ImportError:
 from backend.ingestion.loader import get_zone_lookup, _BASE_TAXI_COUNT, _ZONE_TYPE
 from backend.ingestion.carpark import fetch_carpark_availability, compute_zone_carpark_features
 from backend.ingestion.travel_times import fetch_travel_times, compute_zone_congestion_features
+from backend.paths import raw_dir
 
-SNAPSHOT_DIR         = Path("data/raw/taxi_snapshots")
-CARPARK_SNAPSHOT_DIR = Path("data/raw/carpark_snapshots")
-TRAVEL_SNAPSHOT_DIR  = Path("data/raw/travel_time_snapshots")
+SNAPSHOT_DIR         = raw_dir() / "taxi_snapshots"
+CARPARK_SNAPSHOT_DIR = raw_dir() / "carpark_snapshots"
+TRAVEL_SNAPSHOT_DIR  = raw_dir() / "travel_time_snapshots"
 LTA_API_URL          = "https://datamall2.mytransport.sg/ltaodataservice/Taxi-Availability"
 POLL_INTERVAL_SEC    = 300   # 5 minutes
 SG_BBOX              = {"lat": (1.15, 1.48), "lon": (103.60, 104.10)}

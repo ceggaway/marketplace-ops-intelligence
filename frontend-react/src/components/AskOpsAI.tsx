@@ -28,7 +28,7 @@ function TypingDots() {
           key={i}
           style={{
             width: 6, height: 6, borderRadius: '50%',
-            background: 'rgba(79,142,247,0.55)',
+            background: 'rgba(69,120,200,0.55)',
             animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
           }}
         />
@@ -79,8 +79,8 @@ function MessageBubble({ msg }: { msg: Message }) {
         width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
         background: isUser
           ? 'rgba(255,255,255,0.10)'
-          : 'linear-gradient(135deg, rgba(79,142,247,0.35) 0%, rgba(123,92,247,0.35) 100%)',
-        border: `1px solid ${isUser ? 'rgba(255,255,255,0.14)' : 'rgba(79,142,247,0.35)'}`,
+          : 'linear-gradient(135deg, rgba(69,120,200,0.35) 0%, rgba(107,85,184,0.35) 100%)',
+        border: `1px solid ${isUser ? 'rgba(255,255,255,0.14)' : 'rgba(69,120,200,0.35)'}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         {isUser
@@ -92,9 +92,9 @@ function MessageBubble({ msg }: { msg: Message }) {
       <div style={{
         maxWidth: '78%',
         background: isUser
-          ? 'rgba(79,142,247,0.14)'
+          ? 'rgba(69,120,200,0.14)'
           : 'rgba(255,255,255,0.05)',
-        border: `1px solid ${isUser ? 'rgba(79,142,247,0.28)' : 'rgba(255,255,255,0.09)'}`,
+        border: `1px solid ${isUser ? 'rgba(69,120,200,0.28)' : 'rgba(255,255,255,0.09)'}`,
         borderRadius: isUser ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
         padding: '10px 13px',
       }}>
@@ -204,22 +204,22 @@ export default function AskOpsAI({ open, onClose }: Props) {
         transform: open ? 'translateX(0)' : 'translateX(100%)',
         transition: 'transform 0.28s cubic-bezier(0.32,0,0.15,1)',
         background: 'rgba(7,14,28,0.98)',
-        borderLeft: '1px solid rgba(79,142,247,0.18)',
+        borderLeft: '1px solid rgba(69,120,200,0.18)',
         display: 'flex', flexDirection: 'column',
         boxShadow: '-12px 0 48px rgba(0,0,0,0.65)',
       }}>
 
         {/* ── Header ─────────────────────────────────────────── */}
         <div style={{
-          padding: '16px 18px', borderBottom: '1px solid rgba(79,142,247,0.12)',
+          padding: '16px 18px', borderBottom: '1px solid rgba(69,120,200,0.12)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-              background: 'linear-gradient(135deg, rgba(79,142,247,0.30) 0%, rgba(123,92,247,0.25) 100%)',
-              border: '1px solid rgba(79,142,247,0.35)',
+              background: 'linear-gradient(135deg, rgba(69,120,200,0.30) 0%, rgba(107,85,184,0.25) 100%)',
+              border: '1px solid rgba(69,120,200,0.35)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <Sparkles size={15} color={COLORS.primary} />
@@ -263,8 +263,8 @@ export default function AskOpsAI({ open, onClose }: Props) {
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 16 }}>
               <div style={{
                 width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                background: 'linear-gradient(135deg, rgba(79,142,247,0.35) 0%, rgba(123,92,247,0.35) 100%)',
-                border: '1px solid rgba(79,142,247,0.35)',
+                background: 'linear-gradient(135deg, rgba(69,120,200,0.35) 0%, rgba(107,85,184,0.35) 100%)',
+                border: '1px solid rgba(69,120,200,0.35)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <Loader size={13} color={COLORS.primary} style={{ animation: 'spin 1s linear infinite' }} />
@@ -293,17 +293,17 @@ export default function AskOpsAI({ open, onClose }: Props) {
                   onClick={() => handleSend(s)}
                   style={{
                     textAlign: 'left', padding: '7px 12px', borderRadius: 8,
-                    background: 'rgba(79,142,247,0.07)', border: '1px solid rgba(79,142,247,0.18)',
+                    background: 'rgba(69,120,200,0.07)', border: '1px solid rgba(69,120,200,0.18)',
                     color: 'rgba(255,255,255,0.62)', fontSize: '0.74rem',
                     cursor: 'pointer', fontFamily: 'Inter, sans-serif',
                     transition: 'all 0.15s',
                   }}
                   onMouseEnter={e => {
-                    (e.currentTarget as HTMLElement).style.background = 'rgba(79,142,247,0.14)'
+                    (e.currentTarget as HTMLElement).style.background = 'rgba(69,120,200,0.14)'
                     ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)'
                   }}
                   onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.background = 'rgba(79,142,247,0.07)'
+                    (e.currentTarget as HTMLElement).style.background = 'rgba(69,120,200,0.07)'
                     ;(e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.62)'
                   }}
                 >
@@ -322,7 +322,7 @@ export default function AskOpsAI({ open, onClose }: Props) {
           <div style={{
             display: 'flex', gap: 8, alignItems: 'flex-end',
             background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(79,142,247,0.22)',
+            border: '1px solid rgba(69,120,200,0.22)',
             borderRadius: 12, padding: '8px 10px 8px 14px',
           }}>
             <textarea

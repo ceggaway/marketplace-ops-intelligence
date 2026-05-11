@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { type ToastMessage, toastListeners } from './toast-utils'
 
 const TYPE_COLORS: Record<string, string> = {
-  info:    'rgba(79,142,247,0.92)',
-  success: 'rgba(16,217,138,0.92)',
-  warning: 'rgba(245,158,11,0.92)',
-  error:   'rgba(255,77,109,0.92)',
+  info:    'rgba(69,120,200,0.92)',
+  success: 'rgba(59,175,115,0.92)',
+  warning: 'rgba(201,123,48,0.92)',
+  error:   'rgba(217,82,82,0.92)',
 }
 
 export default function ToastContainer() {

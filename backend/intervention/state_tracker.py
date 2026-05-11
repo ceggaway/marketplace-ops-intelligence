@@ -6,7 +6,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-STATE_PATH = Path("data/outputs/intervention_state.json")
+from backend.paths import outputs_dir
+
+STATE_PATH = outputs_dir() / "intervention_state.json"
 
 
 def _today_iso(now: datetime | None = None) -> str:

@@ -17,8 +17,9 @@ from pathlib import Path
 
 from backend.registry import model_registry as registry
 from backend.monitoring.alerting import emit_alert
+from backend.paths import outputs_dir
 
-AUDIT_LOG_PATH           = Path("data/outputs/audit.log")
+AUDIT_LOG_PATH           = outputs_dir() / "audit.log"
 FAILED_ROW_PCT_THRESHOLD = 0.20
 PSI_ROLLBACK_THRESHOLD   = 0.25
 

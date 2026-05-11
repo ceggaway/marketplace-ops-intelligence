@@ -509,6 +509,34 @@ def test_reports_zone_performance_handles_sparse_predictions(tmp_path):
     assert isinstance(body["chronic_high_risk"], list)
 
 
+def test_reports_zone_performance_returns_period_comparison(tmp_path):
+    now = datetime.now(timezone.utc)
+    history_file = tmp_path / "zone_scores_history.jsonl"
+    records = [
+        {"timestamp": (now - pd.Timedelta(days=6)).isoformat(), "zones": {"1": 0.8, "2": 0.2}},
+        {"timestamp": (now - pd.Timedelta(days=5)).isoformat(), "zones": {"1": 0.7, "2": 0.3}},
+        {"timestamp": (now - pd.Timedelta(days=1)).isoformat(), "zones": {"1": 0.4, "2": 0.2}},
+        {"timestamp": now.isoformat(), "zones": {"1": 0.3, "2": 0.2}},
+    ]
+    history_file.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    predictions_file = tmp_path / "predictions.csv"
+    predictions_file.write_text(
+        "zone_id,zone_name,region\n"
+        "1,Orchard,Central\n"
+        "2,Bedok,East\n"
+    )
+
+    with patch("backend.api.routers.reports.OUT_DIR", tmp_path):
+        resp = client.get("/api/v1/reports/zone-performance?days=7")
+
+    assert resp.status_code == 200
+    comparison = resp.json()["trend_comparison"]
+    assert len(comparison["older_series"]) == 2
+    assert len(comparison["newer_series"]) == 2
+    assert comparison["older_window"]["metrics"]["mean_score"] > comparison["newer_window"]["metrics"]["mean_score"]
+    assert comparison["metric_delta"]["mean_score"] < 0
+
+
 # ── /model/status ─────────────────────────────────────────────────────────────
 
 def test_model_status_200():
@@ -670,7 +698,8 @@ def test_retrain_endpoint_starts_process():
     """POST /pipeline/retrain should return 200 with status/version/message keys."""
     # The script lives at scripts/run_training.py in the real project tree, so
     # script.exists() returns True naturally. We only need to suppress Popen.
-    with patch("backend.api.routers.ml_health.subprocess.Popen") as mock_popen:
+    with patch.dict("os.environ", {"ENABLE_RETRAIN_ENDPOINT": "true", "RETRAIN_API_TOKEN": ""}, clear=False), \
+         patch("backend.api.routers.ml_health.subprocess.Popen") as mock_popen:
         mock_popen.return_value = MagicMock()
         resp = client.post("/api/v1/pipeline/retrain")
     assert resp.status_code == 200
@@ -679,10 +708,39 @@ def test_retrain_endpoint_starts_process():
     assert "version" in body
     assert "message" in body
     mock_popen.assert_called_once()
+    popen_cmd = mock_popen.call_args.args[0]
+    assert "--allow-synthetic" not in popen_cmd
+
+
+def test_retrain_endpoint_403_when_disabled():
+    with patch.dict("os.environ", {"ENABLE_RETRAIN_ENDPOINT": "false", "RETRAIN_API_TOKEN": ""}, clear=False), \
+         patch("backend.api.routers.ml_health.subprocess.Popen") as mock_popen:
+        resp = client.post("/api/v1/pipeline/retrain")
+    assert resp.status_code == 403
+    mock_popen.assert_not_called()
+
+
+def test_retrain_endpoint_requires_token_when_configured():
+    with patch.dict("os.environ", {"ENABLE_RETRAIN_ENDPOINT": "true", "RETRAIN_API_TOKEN": "secret"}, clear=False), \
+         patch("backend.api.routers.ml_health.subprocess.Popen") as mock_popen:
+        resp = client.post("/api/v1/pipeline/retrain")
+    assert resp.status_code == 403
+    mock_popen.assert_not_called()
+
+
+def test_retrain_endpoint_allows_synthetic_only_when_enabled():
+    with patch.dict("os.environ", {"ENABLE_RETRAIN_ENDPOINT": "true", "RETRAIN_API_TOKEN": "", "RETRAIN_ALLOW_SYNTHETIC": "true"}, clear=False), \
+         patch("backend.api.routers.ml_health.subprocess.Popen") as mock_popen:
+        mock_popen.return_value = MagicMock()
+        resp = client.post("/api/v1/pipeline/retrain")
+    assert resp.status_code == 200
+    popen_cmd = mock_popen.call_args.args[0]
+    assert "--allow-synthetic" in popen_cmd
 
 
 def test_retrain_endpoint_500_when_script_missing():
     """POST /pipeline/retrain should return 500 when training script not found."""
-    with patch("backend.api.routers.ml_health.Path.exists", return_value=False):
+    with patch.dict("os.environ", {"ENABLE_RETRAIN_ENDPOINT": "true", "RETRAIN_API_TOKEN": ""}, clear=False), \
+         patch("backend.api.routers.ml_health.Path.exists", return_value=False):
         resp = client.post("/api/v1/pipeline/retrain")
     assert resp.status_code == 500

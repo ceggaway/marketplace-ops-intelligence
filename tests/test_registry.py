@@ -171,6 +171,42 @@ def test_rollback_reverts_to_previous(tmp_path):
     assert reg["versions"]["v2"]["status"] == "rolled_back"
 
 
+def test_rollback_uses_most_recent_previous_by_timestamp(tmp_path):
+    _make_version(tmp_path, "v1")
+    _make_version(tmp_path, "v2")
+    _make_version(tmp_path, "v10")
+    p1, p2, p3 = _patch_registry(tmp_path)
+    with p1, p2, p3:
+        registry._save_registry({
+            "active_version": "v10",
+            "candidate_version": None,
+            "versions": {
+                "v1": {
+                    "status": "previous",
+                    "trained_at": "2024-01-03T00:00:00+00:00",
+                    "promoted_at": "2024-01-03T01:00:00+00:00",
+                    "metrics": {},
+                },
+                "v2": {
+                    "status": "previous",
+                    "trained_at": "2024-01-05T00:00:00+00:00",
+                    "promoted_at": "2024-01-05T01:00:00+00:00",
+                    "metrics": {},
+                },
+                "v10": {
+                    "status": "active",
+                    "trained_at": "2024-01-06T00:00:00+00:00",
+                    "promoted_at": "2024-01-06T01:00:00+00:00",
+                    "metrics": {},
+                },
+            },
+        })
+        rolled_back = registry.rollback()
+        reg = registry._load_registry()
+    assert rolled_back == "v2"
+    assert reg["active_version"] == "v2"
+
+
 def test_rollback_raises_when_no_previous(tmp_path):
     _make_version(tmp_path, "v1")
     p1, p2, p3 = _patch_registry(tmp_path)

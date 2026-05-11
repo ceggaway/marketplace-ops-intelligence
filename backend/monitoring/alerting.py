@@ -24,7 +24,9 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-ALERTS_LOG_PATH = Path("data/outputs/alerts.log")
+from backend.paths import outputs_dir
+
+ALERTS_LOG_PATH = outputs_dir() / "alerts.log"
 
 
 def emit_alert(

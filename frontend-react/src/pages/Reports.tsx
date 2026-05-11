@@ -13,9 +13,10 @@ import {
   TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle2,
   BarChart2, Cpu, Activity, Download, RefreshCw,
 } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api } from '../lib/api'
 import type {
-  ZonePerformanceReport, ZonePerformanceEntry,
+  ZonePerformanceReport, ZonePerformanceEntry, ZonePerformanceSeriesPoint,
   OutcomeReport,
   ModelImpactReport,
 } from '../lib/api'
@@ -77,6 +78,14 @@ function safeDate(value: unknown) {
     : d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+function safeDateRange(start: unknown, end: unknown) {
+  const a = safeDate(start)
+  const b = safeDate(end)
+  if (a === '—' && b === '—') return 'No samples'
+  if (a === b) return a
+  return `${a} to ${b}`
+}
+
 // ── Risk badge ────────────────────────────────────────────────────────────────
 
 function TrendBadge({ trend }: { trend: string }) {
@@ -111,6 +120,121 @@ function ScoreBar({ value, color }: { value: number; color: string }) {
 }
 
 // ── Zone Performance Tab ──────────────────────────────────────────────────────
+
+function PeriodTrendChart({
+  title,
+  range,
+  data,
+  color,
+}: {
+  title: string
+  range: string
+  data: ZonePerformanceSeriesPoint[]
+  color: string
+}) {
+  return (
+    <div style={{ ...CARD, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 260 }}>
+      <div>
+        <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'rgba(255,255,255,0.78)' }}>{title}</div>
+        <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.34)', marginTop: 3 }}>{range}</div>
+      </div>
+      {data.length === 0 ? (
+        <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'rgba(255,255,255,0.30)', fontSize: '0.76rem' }}>
+          No trend samples
+        </div>
+      ) : (
+        <div style={{ height: 190 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 8, right: 12, bottom: 2, left: -18 }}>
+              <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis
+                dataKey="point"
+                tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                yAxisId="score"
+                domain={[0, 1]}
+                tickFormatter={(v) => `${Math.round(Number(v) * 100)}%`}
+                tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                yAxisId="zones"
+                orientation="right"
+                tick={{ fill: 'rgba(255,255,255,0.28)', fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+                width={24}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: 'rgba(6,10,22,0.96)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  borderRadius: 10,
+                  color: 'rgba(255,255,255,0.82)',
+                  fontSize: '0.72rem',
+                }}
+                labelFormatter={(_, payload) => {
+                  const row = payload?.[0]?.payload as ZonePerformanceSeriesPoint | undefined
+                  return row ? safeDateTime(row.timestamp) : ''
+                }}
+                formatter={(value, name) => {
+                  if (name === 'Mean risk') return [`${(Number(value) * 100).toFixed(1)}%`, name]
+                  return [Number(value).toFixed(0), name]
+                }}
+              />
+              <Line yAxisId="score" type="monotone" dataKey="mean_score" name="Mean risk" stroke={color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+              <Line yAxisId="zones" type="monotone" dataKey="high_zones" name="High-risk zones" stroke={COLORS.high} strokeWidth={1.8} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MetricCompareCard({
+  label,
+  older,
+  newer,
+  delta,
+  format = 'pct',
+  lowerIsBetter = true,
+}: {
+  label: string
+  older: number
+  newer: number
+  delta: number
+  format?: 'pct' | 'number'
+  lowerIsBetter?: boolean
+}) {
+  const deltaGood = lowerIsBetter ? delta <= 0 : delta >= 0
+  const color = Math.abs(delta) < 0.0001 ? 'rgba(255,255,255,0.48)' : deltaGood ? COLORS.low : COLORS.high
+  const render = (value: number) => format === 'pct' ? `${(value * 100).toFixed(1)}%` : value.toFixed(1)
+  const renderDelta = () => {
+    if (format === 'pct') return `${delta > 0 ? '+' : ''}${(delta * 100).toFixed(1)}pp`
+    return `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`
+  }
+  return (
+    <div style={{ ...CARD, padding: '14px 16px' }}>
+      <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.38)', marginBottom: 8 }}>{label}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'end' }}>
+        <div>
+          <div style={{ fontSize: '0.56rem', color: 'rgba(255,255,255,0.30)' }}>Older</div>
+          <div style={{ fontSize: '0.90rem', fontWeight: 650, color: 'rgba(255,255,255,0.72)' }}>{render(older)}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: '0.56rem', color: 'rgba(255,255,255,0.30)' }}>Newer</div>
+          <div style={{ fontSize: '0.90rem', fontWeight: 650, color: 'rgba(255,255,255,0.88)' }}>{render(newer)}</div>
+        </div>
+        <div style={{ fontSize: '0.78rem', fontWeight: 700, color, textAlign: 'right' }}>{renderDelta()}</div>
+      </div>
+    </div>
+  )
+}
 
 function ZoneCard({ entry, rank }: { entry: ZonePerformanceEntry; rank?: number }) {
   const zoneName = labelText(entry?.zone_name, 'Unknown zone')
@@ -185,6 +309,14 @@ function ZonePerformanceTab() {
     most_improved: asArray<ZonePerformanceEntry>(data?.most_improved),
     deteriorating: asArray<ZonePerformanceEntry>(data?.deteriorating),
   }
+  const comparison = data?.trend_comparison
+  const olderWindow = comparison?.older_window
+  const newerWindow = comparison?.newer_window
+  const olderMetrics = olderWindow?.metrics ?? {}
+  const newerMetrics = newerWindow?.metrics ?? {}
+  const metricDelta = comparison?.metric_delta ?? {}
+  const olderSeries = asArray<ZonePerformanceSeriesPoint>(comparison?.older_series)
+  const newerSeries = asArray<ZonePerformanceSeriesPoint>(comparison?.newer_series)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -192,14 +324,14 @@ function ZonePerformanceTab() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'rgba(255,255,255,0.78)' }}>Zone performance over time</div>
-          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.38)', marginTop: 2 }}>Which zones are chronic offenders, improving, or trending worse?</div>
+          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.38)', marginTop: 2 }}>Compare the older half of the selected window against the newer half, then inspect zone-level movers.</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {[7, 14].map(d => (
             <button key={d} onClick={() => setDays(d)} style={{
               padding: '5px 14px', borderRadius: 8, fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer',
-              background: days === d ? 'rgba(79,142,247,0.18)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${days === d ? 'rgba(79,142,247,0.40)' : 'rgba(255,255,255,0.10)'}`,
+              background: days === d ? 'rgba(69,120,200,0.18)' : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${days === d ? 'rgba(69,120,200,0.40)' : 'rgba(255,255,255,0.10)'}`,
               color: days === d ? COLORS.primary : 'rgba(255,255,255,0.50)',
               fontFamily: 'Inter, sans-serif', transition: 'all 0.15s',
             }}>{d}d</button>
@@ -225,10 +357,66 @@ function ZonePerformanceTab() {
       {data && (
         <>
           {report.note && (
-            <div style={{ ...CARD, padding: '12px 16px', borderColor: 'rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.06)', color: 'rgba(245,158,11,0.88)', fontSize: '0.76rem' }}>
+            <div style={{ ...CARD, padding: '12px 16px', borderColor: 'rgba(201,123,48,0.25)', background: 'rgba(201,123,48,0.06)', color: 'rgba(201,123,48,0.88)', fontSize: '0.76rem' }}>
               {report.note}
             </div>
           )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(255,255,255,0.70)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Trend Comparison</div>
+                <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.34)', marginTop: 3 }}>Older period versus newer period within the selected lookback.</div>
+              </div>
+              <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.36)' }}>
+                {asNumber(olderMetrics.snapshots)} older snapshots · {asNumber(newerMetrics.snapshots)} newer snapshots
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PeriodTrendChart
+                title="Older Period"
+                range={safeDateRange(olderWindow?.start, olderWindow?.end)}
+                data={olderSeries}
+                color="rgba(148,163,184,0.95)"
+              />
+              <PeriodTrendChart
+                title="Newer Period"
+                range={safeDateRange(newerWindow?.start, newerWindow?.end)}
+                data={newerSeries}
+                color={COLORS.primary}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+              <MetricCompareCard
+                label="Mean risk score"
+                older={asNumber(olderMetrics.mean_score)}
+                newer={asNumber(newerMetrics.mean_score)}
+                delta={asNumber(metricDelta.mean_score)}
+              />
+              <MetricCompareCard
+                label="Time high-risk"
+                older={asNumber(olderMetrics.pct_time_high)}
+                newer={asNumber(newerMetrics.pct_time_high)}
+                delta={asNumber(metricDelta.pct_time_high)}
+              />
+              <MetricCompareCard
+                label="Avg high-risk zones"
+                older={asNumber(olderMetrics.avg_high_zones)}
+                newer={asNumber(newerMetrics.avg_high_zones)}
+                delta={asNumber(metricDelta.avg_high_zones)}
+                format="number"
+              />
+              <MetricCompareCard
+                label="Healthy low-risk share"
+                older={asNumber(olderMetrics.pct_time_low)}
+                newer={asNumber(newerMetrics.pct_time_low)}
+                delta={asNumber(metricDelta.pct_time_low)}
+                lowerIsBetter={false}
+              />
+            </div>
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
             {/* Chronic high-risk */}
@@ -334,7 +522,7 @@ function OutcomesTab() {
       {data && (
         <>
           {report.sample_size_note && (
-            <div style={{ ...CARD, padding: '12px 16px', borderColor: 'rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.06)', color: 'rgba(245,158,11,0.88)', fontSize: '0.76rem' }}>
+            <div style={{ ...CARD, padding: '12px 16px', borderColor: 'rgba(201,123,48,0.25)', background: 'rgba(201,123,48,0.06)', color: 'rgba(201,123,48,0.88)', fontSize: '0.76rem' }}>
               {report.sample_size_note}
             </div>
           )}
@@ -695,8 +883,8 @@ export default function Reports() {
           <button key={tab} onClick={() => setActiveTab(tab)} style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '7px 16px', borderRadius: 9, fontSize: '0.78rem', fontWeight: 500, cursor: 'pointer',
-            background: activeTab === tab ? 'rgba(79,142,247,0.18)' : 'transparent',
-            border: `1px solid ${activeTab === tab ? 'rgba(79,142,247,0.35)' : 'transparent'}`,
+            background: activeTab === tab ? 'rgba(69,120,200,0.18)' : 'transparent',
+            border: `1px solid ${activeTab === tab ? 'rgba(69,120,200,0.35)' : 'transparent'}`,
             color: activeTab === tab ? COLORS.primary : 'rgba(255,255,255,0.45)',
             fontFamily: 'Inter, sans-serif', transition: 'all 0.15s',
           }}>

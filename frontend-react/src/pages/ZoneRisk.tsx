@@ -4,17 +4,62 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search,
   Car, AlertTriangle, TrendingUp, Zap, Activity, Download,
+  Hexagon, Map,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { api } from '../lib/api'
-import type { Zone } from '../lib/api'
+import type { Zone, H3CellSummary } from '../lib/api'
 import { riskColor, COLORS, SECTION_LABEL, TOOLTIP_STYLE } from '../lib/utils'
 import GlassCard from '../components/GlassCard'
 import Spinner from '../components/Spinner'
 import ApiError from '../components/ApiError'
 import EmptyState from '../components/EmptyState'
 import SingaporeMap from '../components/SingaporeMap'
+import H3HexMap from '../components/H3HexMap'
 import SparkLine from '../components/SparkLine'
+
+// ── Spatial toggle ────────────────────────────────────────────────────────────
+type SpatialMode = 'zone' | 'h3'
+
+function SpatialToggle({ mode, onChange }: { mode: SpatialMode; onChange: (m: SpatialMode) => void }) {
+  const btn = (m: SpatialMode, Icon: typeof Map, label: string) => (
+    <button
+      key={m}
+      onClick={() => onChange(m)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '6px 14px', borderRadius: 7,
+        background: mode === m ? 'rgba(69,120,200,0.18)' : 'transparent',
+        border: `1px solid ${mode === m ? 'rgba(69,120,200,0.40)' : 'transparent'}`,
+        color: mode === m ? COLORS.primary : 'rgba(255,255,255,0.42)',
+        fontSize: '0.78rem', fontWeight: mode === m ? 600 : 400,
+        cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+        transition: 'all 0.15s',
+      }}
+    >
+      <Icon size={13} strokeWidth={1.75} />
+      {label}
+    </button>
+  )
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 2,
+      background: 'rgba(255,255,255,0.04)',
+      border: '1px solid rgba(99,140,255,0.14)',
+      borderRadius: 9, padding: 3,
+    }}>
+      {btn('zone', Map, 'Planning Zones')}
+      {btn('h3', Hexagon, 'H3 Hex Cells')}
+    </div>
+  )
+}
+
+// ── H3 severity color ─────────────────────────────────────────────────────────
+function severityColor(bucket: string): string {
+  if (bucket === 'severe' || bucket === 'high') return COLORS.high
+  if (bucket === 'moderate') return COLORS.medium
+  return COLORS.low
+}
 
 // ── Helper: risk pill ────────────────────────────────────────────────────────
 function RiskPill({ score, level }: { score: number; level: string }) {
@@ -91,10 +136,21 @@ function KpiChip({ label, value, color, icon, badge, right }: KpiChipProps) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function ZoneRisk() {
   const navigate = useNavigate()
+
+  // ── Spatial toggle state ──────────────────────────────────────────────────
+  const [spatialMode, setSpatialMode] = useState<SpatialMode>('zone')
+
+  // ── Zone state ────────────────────────────────────────────────────────────
   const [riskFilter, setRiskFilter] = useState('')
   const [regionFilter, setRegionFilter] = useState('')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  // ── H3 state ──────────────────────────────────────────────────────────────
+  const [selectedH3Cell, setSelectedH3Cell] = useState<string | null>(null)
+  const [h3Search, setH3Search] = useState('')
+  const [h3ParentZone, setH3ParentZone] = useState('')
+  const [h3Severity, setH3Severity] = useState('')
 
   // Always fetch all zones — filtering is done client-side so search, risk and
   // region all work together on the same dataset without extra API round-trips.
@@ -123,6 +179,20 @@ export default function ZoneRisk() {
     queryKey: ['overview'],
     queryFn: api.overview,
     staleTime: 30000,
+  })
+
+  // ── H3 queries (only fetched in H3 mode) ─────────────────────────────────
+  const { data: h3Cells, isLoading: h3Loading } = useQuery({
+    queryKey: ['h3Cells'],
+    queryFn: () => api.h3Cells(),
+    staleTime: 30000,
+    enabled: spatialMode === 'h3',
+  })
+  const { data: h3Heatmap } = useQuery({
+    queryKey: ['h3Heatmap'],
+    queryFn: () => api.h3Heatmap(),
+    staleTime: 30000,
+    enabled: spatialMode === 'h3',
   })
 
   // ── Derived data ──────────────────────────────────────────────────────────
@@ -161,6 +231,29 @@ export default function ZoneRisk() {
   ]
   const donutColors = [COLORS.high, COLORS.medium, COLORS.low]
   const highConcentration = totalZones ? Math.round((counts.high / totalZones) * 100) : 0
+
+  // ── H3 derived data ───────────────────────────────────────────────────────
+  const h3Counts = h3Cells
+    ? {
+        severe:   h3Cells.filter(c => c.severity_bucket === 'severe').length,
+        high:     h3Cells.filter(c => c.severity_bucket === 'high').length,
+        moderate: h3Cells.filter(c => c.severity_bucket === 'moderate').length,
+        low:      h3Cells.filter(c => c.severity_bucket === 'low').length,
+        sparse:   h3Cells.filter(c => c.sparse_cell_flag).length,
+      }
+    : { severe: 0, high: 0, moderate: 0, low: 0, sparse: 0 }
+
+  const h3Filtered: H3CellSummary[] = h3Cells
+    ? h3Cells.filter(c =>
+        (!h3ParentZone || c.parent_zone.toLowerCase().includes(h3ParentZone.toLowerCase())) &&
+        (!h3Severity   || c.severity_bucket === h3Severity) &&
+        (!h3Search     || c.h3_cell.toLowerCase().includes(h3Search.toLowerCase()) ||
+                          c.parent_zone.toLowerCase().includes(h3Search.toLowerCase()))
+      )
+    : []
+
+  const selectedH3Data = h3Cells?.find(c => c.h3_cell === selectedH3Cell) ?? null
+  const h3ParentZones = [...new Set(h3Cells?.map(c => c.parent_zone) ?? [])].sort()
 
   // KEY DRIVERS from explanation_tag — tags use " + " as separator
   const drivers = detail?.explanation_tag && detail.explanation_tag !== 'normal conditions'
@@ -228,6 +321,280 @@ export default function ZoneRisk() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* ── Spatial mode toggle ────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <SpatialToggle mode={spatialMode} onChange={m => { setSpatialMode(m); setSelectedH3Cell(null) }} />
+        {spatialMode === 'h3' && (
+          <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.30)', fontStyle: 'italic' }}>
+            H3 resolution 8 · ~0.46 km² per cell
+          </span>
+        )}
+      </div>
+
+      {spatialMode === 'h3' ? (
+        /* ════════════════════════════════════ H3 MODE ══════════════════════════════ */
+        h3Loading ? <Spinner /> :
+        !h3Cells || h3Cells.length === 0 ? (
+          <EmptyState
+            title="No H3 predictions available"
+            message="Run the H3 scoring pipeline to populate cell-level predictions."
+          />
+        ) : (
+          <>
+            {/* ── H3 KPI chips ────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <KpiChip
+                label="Total H3 Cells"
+                value={(h3Cells?.length ?? 0).toLocaleString()}
+                color={COLORS.primary}
+                icon={<Hexagon size={16} color={COLORS.primary} strokeWidth={1.75} />}
+              />
+              <KpiChip
+                label="High / Severe"
+                value={h3Counts.severe + h3Counts.high}
+                color={COLORS.high}
+                badge={h3Cells?.length ? `${(((h3Counts.severe + h3Counts.high) / h3Cells.length) * 100).toFixed(1)}%` : undefined}
+                icon={<AlertTriangle size={16} color={COLORS.high} strokeWidth={1.75} />}
+              />
+              <KpiChip
+                label="Moderate"
+                value={h3Counts.moderate}
+                color={COLORS.medium}
+                badge={h3Cells?.length ? `${((h3Counts.moderate / h3Cells.length) * 100).toFixed(1)}%` : undefined}
+                icon={<Zap size={16} color={COLORS.medium} strokeWidth={1.75} />}
+              />
+              <KpiChip
+                label="Sparse Cells"
+                value={h3Counts.sparse}
+                color="rgba(201,123,48,0.80)"
+                badge="low data"
+                icon={<Activity size={16} color="rgba(201,123,48,0.80)" strokeWidth={1.75} />}
+              />
+            </div>
+
+            {/* ── H3 Table + Map ───────────────────────────────────────────── */}
+            <div style={{ display: 'grid', gridTemplateColumns: '45% 1fr', gap: 16 }}>
+
+              {/* LEFT: H3 cell table */}
+              <GlassCard hover={false} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                {/* Filter bar */}
+                <div style={{ padding: '14px 16px 10px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={13} color="rgba(255,255,255,0.35)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      value={h3Search}
+                      onChange={e => setH3Search(e.target.value)}
+                      placeholder="Search cell ID or zone…"
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        background: 'rgba(255,255,255,0.06)',
+                        border: '1px solid rgba(99,140,255,0.14)',
+                        borderRadius: 8, padding: '7px 10px 7px 30px',
+                        color: 'rgba(255,255,255,0.80)', fontSize: '0.78rem',
+                        outline: 'none', fontFamily: 'Inter, sans-serif',
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <select
+                      value={h3ParentZone}
+                      onChange={e => setH3ParentZone(e.target.value)}
+                      style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(99,140,255,0.14)', borderRadius: 8, padding: '6px 10px', color: 'rgba(255,255,255,0.70)', fontSize: '0.75rem', outline: 'none', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}
+                    >
+                      <option value="">All Zones</option>
+                      {h3ParentZones.map(z => <option key={z} value={z}>{z}</option>)}
+                    </select>
+                    <select
+                      value={h3Severity}
+                      onChange={e => setH3Severity(e.target.value)}
+                      style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(99,140,255,0.14)', borderRadius: 8, padding: '6px 10px', color: 'rgba(255,255,255,0.70)', fontSize: '0.75rem', outline: 'none', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}
+                    >
+                      <option value="">All Severities</option>
+                      <option value="severe">Severe</option>
+                      <option value="high">High</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="low">Low</option>
+                    </select>
+                    <button
+                      onClick={() => { setH3Search(''); setH3ParentZone(''); setH3Severity('') }}
+                      style={{ padding: '6px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(99,140,255,0.14)', color: 'rgba(255,255,255,0.45)', fontSize: '0.70rem', cursor: 'pointer', fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap' }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                {/* H3 table */}
+                <div style={{ overflowX: 'auto', overflowY: 'auto', flex: 1, maxHeight: '430px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                    <thead style={{ position: 'sticky', top: 0, background: 'rgba(8,15,30,0.97)', zIndex: 1 }}>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                        {['CELL', 'PARENT ZONE', 'SEVERITY', 'RISK SCORE', 'TAXIS', ''].map(h => (
+                          <th key={h} style={{ padding: '10px 12px', textAlign: 'left', ...SECTION_LABEL, marginBottom: 0, whiteSpace: 'nowrap', fontWeight: 700 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {h3Filtered.map((c: H3CellSummary) => {
+                        const isSelected = selectedH3Cell === c.h3_cell
+                        const sColor = severityColor(c.severity_bucket)
+                        return (
+                          <tr
+                            key={c.h3_cell}
+                            onClick={() => setSelectedH3Cell(prev => prev === c.h3_cell ? null : c.h3_cell)}
+                            style={{
+                              borderBottom: '1px solid rgba(255,255,255,0.04)',
+                              background: isSelected ? 'rgba(69,120,200,0.12)' : 'transparent',
+                              cursor: 'pointer', transition: 'background 0.12s',
+                            }}
+                            onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(69,120,200,0.06)' }}
+                            onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                          >
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: '0.68rem', color: 'rgba(255,255,255,0.72)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {c.h3_cell}
+                              {c.sparse_cell_flag && (
+                                <span style={{ marginLeft: 5, fontSize: '0.58rem', background: 'rgba(201,123,48,0.15)', color: 'rgba(201,123,48,0.85)', border: '1px solid rgba(201,123,48,0.30)', borderRadius: 3, padding: '1px 4px' }}>sparse</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px 12px', color: 'rgba(255,255,255,0.55)', fontSize: '0.72rem', whiteSpace: 'nowrap', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {c.parent_zone}
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <span style={{ background: `${sColor}18`, color: sColor, border: `1px solid ${sColor}35`, borderRadius: 5, padding: '2px 7px', fontSize: '0.70rem', fontWeight: 600, textTransform: 'capitalize' }}>
+                                {c.severity_bucket}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <span style={{ color: sColor, fontWeight: 700, fontVariantNumeric: 'tabular-nums', fontSize: '0.80rem' }}>
+                                {c.depletion_risk_score.toFixed(3)}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px 12px', color: 'rgba(255,255,255,0.55)', fontVariantNumeric: 'tabular-nums' }}>
+                              {c.taxi_count}
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <button
+                                onClick={e => { e.stopPropagation(); setSelectedH3Cell(prev => prev === c.h3_cell ? null : c.h3_cell) }}
+                                style={{ background: 'rgba(69,120,200,0.12)', border: '1px solid rgba(69,120,200,0.25)', borderRadius: 5, padding: '3px 10px', color: COLORS.primary, fontSize: '0.70rem', cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}
+                              >View</button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      {h3Filtered.length === 0 && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: '28px 14px', textAlign: 'center', color: 'rgba(255,255,255,0.28)', fontSize: '0.80rem' }}>
+                            No cells match your filters
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassCard>
+
+              {/* RIGHT: H3 map + cell detail */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <GlassCard hover={false} style={{ padding: '14px 16px', overflow: 'hidden', flex: '0 0 auto' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ ...SECTION_LABEL, marginBottom: 0, fontSize: '0.58rem' }}>DEPLETION RISK</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      {([['Low', COLORS.low], ['Moderate', COLORS.medium], ['High', COLORS.high]] as const).map(([label, color]) => (
+                        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 5px ${color}88` }} />
+                          <span style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.45)' }}>{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ height: 270, borderRadius: 8, overflow: 'hidden' }}>
+                    <H3HexMap
+                      cells={h3Heatmap ?? []}
+                      selectedCell={selectedH3Cell}
+                      onSelect={setSelectedH3Cell}
+                    />
+                  </div>
+                </GlassCard>
+
+                {/* Selected cell detail */}
+                {selectedH3Data ? (
+                  <GlassCard hover={false} style={{ padding: '16px 18px', flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                      <div>
+                        <div style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: 'rgba(255,255,255,0.60)', marginBottom: 3 }}>{selectedH3Data.h3_cell}</div>
+                        <div style={{ fontSize: '1.0rem', fontWeight: 700, color: 'rgba(255,255,255,0.92)', marginBottom: 4 }}>{selectedH3Data.parent_zone}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 600, textTransform: 'capitalize',
+                            background: `${severityColor(selectedH3Data.severity_bucket)}18`,
+                            color: severityColor(selectedH3Data.severity_bucket),
+                            border: `1px solid ${severityColor(selectedH3Data.severity_bucket)}30`,
+                            borderRadius: 4, padding: '2px 7px',
+                          }}>{selectedH3Data.severity_bucket}</span>
+                          {selectedH3Data.sparse_cell_flag && (
+                            <span style={{ fontSize: '0.68rem', fontWeight: 600, background: 'rgba(201,123,48,0.12)', color: 'rgba(201,123,48,0.85)', border: '1px solid rgba(201,123,48,0.28)', borderRadius: 4, padding: '2px 7px' }}>
+                              ⚠ Sparse cell
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '1.75rem', fontWeight: 800, color: severityColor(selectedH3Data.severity_bucket), fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                        {selectedH3Data.depletion_risk_score.toFixed(3)}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ ...SECTION_LABEL, marginBottom: 6 }}>SUPPLY SIGNALS</div>
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        {[
+                          { label: 'Taxis', value: String(selectedH3Data.taxi_count), color: COLORS.primary },
+                          { label: 'Baseline', value: selectedH3Data.baseline_supply.toFixed(1), color: 'rgba(255,255,255,0.60)' },
+                          { label: 'Pred. Shortage', value: selectedH3Data.predicted_shortage.toFixed(3), color: severityColor(selectedH3Data.severity_bucket) },
+                        ].map(({ label, value, color }) => (
+                          <div key={label} style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 12px' }}>
+                            <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.38)', marginBottom: 2 }}>{label}</div>
+                            <div style={{ fontSize: '0.90rem', fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ ...SECTION_LABEL, marginBottom: 6 }}>RECOMMENDED ACTION</div>
+                      <div style={{ background: 'rgba(59,175,115,0.07)', border: '1px solid rgba(59,175,115,0.18)', borderRadius: 8, padding: '9px 12px', fontSize: '0.78rem', color: 'rgba(255,255,255,0.75)', lineHeight: 1.5, display: 'flex', gap: 8 }}>
+                        <Zap size={13} color={COLORS.low} strokeWidth={1.75} style={{ flexShrink: 0, marginTop: 2 }} />
+                        <span>
+                          <strong style={{ color: 'rgba(255,255,255,0.90)', textTransform: 'capitalize' }}>{selectedH3Data.recommended_action.replace(/_/g, ' ')}</strong>
+                          {selectedH3Data.action_reason ? ` — ${selectedH3Data.action_reason}` : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    {selectedH3Data.sparse_cell_flag && (
+                      <div style={{ background: 'rgba(201,123,48,0.07)', border: '1px solid rgba(201,123,48,0.20)', borderRadius: 8, padding: '9px 12px', fontSize: '0.72rem', color: 'rgba(201,123,48,0.80)', lineHeight: 1.5 }}>
+                        ⚠ Sparse cell — fewer than the minimum taxis per cell in the baseline window. Treat scores as directional, not precise.
+                      </div>
+                    )}
+                  </GlassCard>
+                ) : (
+                  <GlassCard hover={false} style={{ padding: '20px 18px', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <Hexagon size={28} color="rgba(255,255,255,0.18)" strokeWidth={1.5} style={{ marginBottom: 8 }} />
+                      <div style={{ fontSize: '0.80rem', color: 'rgba(255,255,255,0.35)' }}>
+                        Select a hex cell to view details
+                      </div>
+                    </div>
+                  </GlassCard>
+                )}
+              </div>
+            </div>
+          </>
+        )
+      ) : (
+
+        /* ════════════════════════════════════ ZONE MODE ════════════════════════════ */
+        <>
 
       {/* ── Row 1: KPI chips ───────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 12 }}>
@@ -325,8 +692,8 @@ export default function ZoneRisk() {
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   padding: '6px 10px', borderRadius: 8,
-                  background: filtered.length > 0 ? 'rgba(79,142,247,0.12)' : 'rgba(255,255,255,0.05)',
-                  border: `1px solid ${filtered.length > 0 ? 'rgba(79,142,247,0.25)' : 'rgba(255,255,255,0.10)'}`,
+                  background: filtered.length > 0 ? 'rgba(69,120,200,0.12)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${filtered.length > 0 ? 'rgba(69,120,200,0.25)' : 'rgba(255,255,255,0.10)'}`,
                   color: filtered.length > 0 ? COLORS.primary : 'rgba(255,255,255,0.30)',
                   fontSize: '0.70rem', cursor: filtered.length > 0 ? 'pointer' : 'not-allowed',
                   fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap',
@@ -364,11 +731,11 @@ export default function ZoneRisk() {
                       onClick={() => handleSelectRow(z.zone_id)}
                       style={{
                         borderBottom: '1px solid rgba(255,255,255,0.04)',
-                        background: isSelected ? 'rgba(79,142,247,0.12)' : 'transparent',
+                        background: isSelected ? 'rgba(69,120,200,0.12)' : 'transparent',
                         cursor: 'pointer',
                         transition: 'background 0.12s',
                       }}
-                      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(79,142,247,0.06)' }}
+                      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(69,120,200,0.06)' }}
                       onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                     >
                       <td style={{ padding: '9px 14px', color: 'rgba(255,255,255,0.88)', fontWeight: 500, whiteSpace: 'nowrap', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -392,8 +759,8 @@ export default function ZoneRisk() {
                         <button
                           onClick={e => { e.stopPropagation(); handleSelectRow(z.zone_id) }}
                           style={{
-                            background: 'rgba(79,142,247,0.12)',
-                            border: '1px solid rgba(79,142,247,0.25)',
+                            background: 'rgba(69,120,200,0.12)',
+                            border: '1px solid rgba(69,120,200,0.25)',
                             borderRadius: 5, padding: '3px 10px',
                             color: COLORS.primary, fontSize: '0.70rem',
                             cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontWeight: 600,
@@ -491,9 +858,9 @@ export default function ZoneRisk() {
                     {detail.risk_level === 'high' && (
                       <span style={{
                         fontSize: '0.68rem', fontWeight: 600,
-                        background: 'rgba(255,77,109,0.10)',
+                        background: 'rgba(217,82,82,0.10)',
                         color: COLORS.high,
-                        border: '1px solid rgba(255,77,109,0.25)',
+                        border: '1px solid rgba(217,82,82,0.25)',
                         borderRadius: 4, padding: '2px 7px',
                       }}>Top Priority</span>
                     )}
@@ -516,9 +883,9 @@ export default function ZoneRisk() {
                     {drivers.map((d, i) => (
                       <span key={i} style={{
                         fontSize: '0.70rem', fontWeight: 500,
-                        background: 'rgba(79,142,247,0.10)',
+                        background: 'rgba(69,120,200,0.10)',
                         color: COLORS.primary,
-                        border: '1px solid rgba(79,142,247,0.22)',
+                        border: '1px solid rgba(69,120,200,0.22)',
                         borderRadius: 20, padding: '3px 10px',
                       }}>{d}</span>
                     ))}
@@ -533,8 +900,8 @@ export default function ZoneRisk() {
                 <div style={{ ...SECTION_LABEL, marginBottom: 6 }}>SUPPLY SIGNALS</div>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <div style={{
-                    flex: 1, background: 'rgba(255,77,109,0.08)',
-                    border: '1px solid rgba(255,77,109,0.18)',
+                    flex: 1, background: 'rgba(217,82,82,0.08)',
+                    border: '1px solid rgba(217,82,82,0.18)',
                     borderRadius: 8, padding: '8px 12px',
                   }}>
                     <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.38)', marginBottom: 2 }}>Depletion / hr</div>
@@ -560,8 +927,8 @@ export default function ZoneRisk() {
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ ...SECTION_LABEL, marginBottom: 6 }}>RECOMMENDED ACTION</div>
                   <div style={{
-                    background: 'rgba(16,217,138,0.07)',
-                    border: '1px solid rgba(16,217,138,0.18)',
+                    background: 'rgba(59,175,115,0.07)',
+                    border: '1px solid rgba(59,175,115,0.18)',
                     borderRadius: 8, padding: '9px 12px',
                     fontSize: '0.78rem', color: 'rgba(255,255,255,0.75)', lineHeight: 1.5,
                     display: 'flex', gap: 8,
@@ -710,9 +1077,9 @@ export default function ZoneRisk() {
             <div style={{ ...SECTION_LABEL, marginBottom: 0 }}>PIPELINE STATUS</div>
             <span style={{
               fontSize: '0.65rem', fontWeight: 600,
-              background: latestRun?.run_status === 'success' ? 'rgba(16,217,138,0.12)' : 'rgba(255,77,109,0.12)',
+              background: latestRun?.run_status === 'success' ? 'rgba(59,175,115,0.12)' : 'rgba(217,82,82,0.12)',
               color: latestRun?.run_status === 'success' ? COLORS.low : COLORS.high,
-              border: `1px solid ${latestRun?.run_status === 'success' ? 'rgba(16,217,138,0.22)' : 'rgba(255,77,109,0.22)'}`,
+              border: `1px solid ${latestRun?.run_status === 'success' ? 'rgba(59,175,115,0.22)' : 'rgba(217,82,82,0.22)'}`,
               borderRadius: 20, padding: '2px 9px',
             }}>
               {latestRun?.run_status === 'success' ? 'Healthy' : latestRun?.run_status === 'never_run' ? 'No Runs' : latestRun?.run_status ?? 'Unknown'}
@@ -763,6 +1130,9 @@ export default function ZoneRisk() {
           </div>
         </GlassCard>
       </div>
+
+        </> /* end zone mode fragment */
+      )} {/* end spatialMode ternary */}
     </div>
   )
 }

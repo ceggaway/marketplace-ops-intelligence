@@ -26,6 +26,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from backend.paths import raw_dir
+
 # ---------------------------------------------------------------------------
 # Singapore URA Planning Areas (55 zones)
 # ---------------------------------------------------------------------------
@@ -245,7 +247,7 @@ def _congestion_factor(
 
 def get_zone_lookup() -> pd.DataFrame:
     """Return zone lookup DataFrame including zone_type."""
-    path = Path("data/raw/sg_planning_areas.csv")
+    path = raw_dir() / "sg_planning_areas.csv"
     if path.exists():
         df = pd.read_csv(path)
         if "zone_type" not in df.columns:
@@ -258,9 +260,9 @@ def get_zone_lookup() -> pd.DataFrame:
     return df
 
 
-def load_zone_lookup(path: str | Path = "data/raw/sg_planning_areas.csv") -> pd.DataFrame:
+def load_zone_lookup(path: str | Path | None = None) -> pd.DataFrame:
     """Load Singapore URA planning area metadata."""
-    p = Path(path)
+    p = Path(path) if path is not None else raw_dir() / "sg_planning_areas.csv"
     if p.exists():
         df = pd.read_csv(p)
         if "zone_type" not in df.columns:
@@ -349,7 +351,7 @@ def generate_synthetic_data(
     This is the direct supply signal from the LTA Taxi Availability API.
 
     The target variable (computed during training):
-        supply_shortage = 1 if taxi_count(t+1) < taxi_count(t) * 0.6
+        supply_depletion_event = 1 if taxi_count(t+1) < taxi_count(t) * 0.6
 
     Patterns encoded:
     - Morning peak (07–09): CBD and transport hubs deplete fast
@@ -476,7 +478,7 @@ def aggregate_to_zone_hour(
 
 def load_sg_holidays(year: int = 2024) -> pd.DataFrame:
     """Load SG public holidays from cached file, or return hardcoded 2024 set."""
-    path = Path("data/raw/sg_public_holidays.json")
+    path = raw_dir() / "sg_public_holidays.json"
     if path.exists():
         with open(path) as f:
             data = json.load(f)

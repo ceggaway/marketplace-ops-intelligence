@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Map, Zap, Activity, Bell, Database, BarChart2, MessageSquare, Headphones, X } from 'lucide-react'
+import { LayoutDashboard, Map, Zap, Activity, Bell, Database, BarChart2, MessageSquare, Headphones, X, FileText } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Alert } from '../lib/api'
@@ -14,6 +14,7 @@ const NOISE_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='h
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
   '/':           { title: 'Overview',           sub: 'Live performance, key insights, and what\'s next.' },
+  '/project':    { title: 'Project Brief',      sub: 'What OpsIQ does, how the ML pipeline works, and where each dashboard fits.' },
   '/zones':      { title: 'Zone Risk Monitor',  sub: 'Understand risk by location and take action where it matters most.' },
   '/actions':    { title: 'Action Center',      sub: 'Prioritized interventions that drive results.' },
   '/health':     { title: 'Model Health',       sub: 'Monitor performance, detect drift, and keep models reliable.' },
@@ -21,6 +22,7 @@ const PAGE_META: Record<string, { title: string; sub: string }> = {
 }
 
 const NAV = [
+  { to: '/project', Icon: FileText,        label: 'Project Brief', sub: 'Purpose & architecture' },
   { to: '/',        Icon: LayoutDashboard, label: 'Overview',      sub: 'Live KPIs & Insights' },
   { to: '/zones',   Icon: Map,             label: 'Zone Risk',      sub: 'Risk scoring & heatmap' },
   { to: '/actions', Icon: Zap,             label: 'Action Center',  sub: 'Prioritized interventions' },
@@ -40,8 +42,8 @@ function NavItem({ to, Icon, label, sub }: typeof NAV[0]) {
     <NavLink to={to} end={to === '/'} style={({ isActive }) => ({
       display: 'flex', alignItems: 'center', gap: 10,
       padding: '9px 10px', borderRadius: 10, marginBottom: 1,
-      background: isActive ? 'rgba(79,142,247,0.14)' : 'transparent',
-      border: `1px solid ${isActive ? 'rgba(79,142,247,0.30)' : 'transparent'}`,
+      background: isActive ? 'rgba(69,120,200,0.14)' : 'transparent',
+      border: `1px solid ${isActive ? 'rgba(69,120,200,0.30)' : 'transparent'}`,
       color: isActive ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.46)',
       textDecoration: 'none', transition: 'all 0.18s ease',
     })}>
@@ -103,7 +105,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Subtle blue glow accent */}
         <div style={{
           position: 'absolute', inset: 0,
-          background: 'radial-gradient(ellipse 40% 30% at 50% 0%, rgba(79,142,247,0.12) 0%, transparent 60%)',
+          background: 'radial-gradient(ellipse 40% 30% at 50% 0%, rgba(69,120,200,0.12) 0%, transparent 60%)',
         }} />
         {/* Vignette */}
         <div style={{
@@ -127,15 +129,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Hexagon-style logo mark */}
             <div style={{
               width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-              background: 'linear-gradient(135deg, #4F8EF7 0%, #7B5CF7 100%)',
+              background: 'linear-gradient(135deg, #4578C8 0%, #6B55B8 100%)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 0 12px rgba(79,142,247,0.40)',
+              boxShadow: '0 0 12px rgba(69,120,200,0.35)',
             }}>
               <Activity size={15} color="#fff" strokeWidth={2} />
             </div>
             <div>
               <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#fff', letterSpacing: '0.04em', lineHeight: 1 }}>OpsIQ</div>
-              <div style={{ fontSize: '0.52rem', color: 'rgba(255,255,255,0.36)', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>ML Intelligence · SG</div>
+              <div style={{ fontSize: '0.52rem', color: 'rgba(255,255,255,0.36)', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>ML Intelligence · SG Taxi Ops</div>
             </div>
           </div>
         </div>
@@ -155,8 +157,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <NavLink key={to} to={to} style={({ isActive }) => ({
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '9px 10px', borderRadius: 10, marginBottom: 1,
-              background: isActive ? 'rgba(79,142,247,0.14)' : 'transparent',
-              border: `1px solid ${isActive ? 'rgba(79,142,247,0.30)' : 'transparent'}`,
+              background: isActive ? 'rgba(69,120,200,0.14)' : 'transparent',
+              border: `1px solid ${isActive ? 'rgba(69,120,200,0.30)' : 'transparent'}`,
               color: isActive ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.46)',
               textDecoration: 'none', transition: 'all 0.18s ease',
             })}>
@@ -198,15 +200,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* AI assistant card */}
-        <div style={{ margin: '8px 10px', background: 'linear-gradient(135deg, rgba(79,142,247,0.14) 0%, rgba(123,92,247,0.10) 100%)', border: '1px solid rgba(79,142,247,0.22)', borderRadius: 12, padding: '14px 14px 12px' }}>
+        <div style={{ margin: '8px 10px', background: 'linear-gradient(135deg, rgba(69,120,200,0.14) 0%, rgba(107,85,184,0.10) 100%)', border: '1px solid rgba(69,120,200,0.22)', borderRadius: 12, padding: '14px 14px 12px' }}>
           <div style={{ fontSize: '0.60rem', color: 'rgba(255,255,255,0.42)', marginBottom: 4 }}>Need clarity fast?</div>
           <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#fff', marginBottom: 3 }}>Ask Ops AI</div>
-          <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.45)', lineHeight: 1.5, marginBottom: 10 }}>Get instant insights and recommendations.</div>
+          <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.45)', lineHeight: 1.5, marginBottom: 10 }}>Get instant explanations from the latest dashboard outputs.</div>
           <button
             onClick={() => setChatOpen(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              background: 'rgba(79,142,247,0.20)', border: '1px solid rgba(79,142,247,0.35)',
+              background: 'rgba(69,120,200,0.20)', border: '1px solid rgba(69,120,200,0.35)',
               borderRadius: 8, padding: '6px 12px', color: COLORS.primary,
               fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
             }}>

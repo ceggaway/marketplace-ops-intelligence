@@ -34,8 +34,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from backend.paths import raw_dir
+
 CARPARK_API_URL = "https://datamall2.mytransport.sg/ltaodataservice/CarParkAvailabilityv2"
-SAMPLE_PATH     = Path("data/raw/sample_carpark.json")
+SAMPLE_PATH     = raw_dir() / "sample_carpark.json"
 
 
 # ---------------------------------------------------------------------------

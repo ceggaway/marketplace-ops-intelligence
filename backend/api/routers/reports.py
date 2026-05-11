@@ -19,11 +19,12 @@ import pandas as pd
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from backend.paths import outputs_dir
 from backend.registry import model_registry as registry
 from backend.recommendations.policy_effectiveness import effectiveness_by_action, load_outcome_records, summarise_action_outcomes
 
 router  = APIRouter()
-OUT_DIR = Path("data/outputs")
+OUT_DIR = outputs_dir()
 ZONE_HISTORY_RETENTION_DAYS = 14
 
 
@@ -78,6 +79,108 @@ def _safe_dict(value) -> dict:
 
 def _safe_list(value) -> list:
     return value if isinstance(value, list) else []
+
+
+def _empty_trend_comparison() -> dict:
+    return {
+        "older_window": {"label": "Older period", "start": None, "end": None, "metrics": {}},
+        "newer_window": {"label": "Newer period", "start": None, "end": None, "metrics": {}},
+        "metric_delta": {},
+        "older_series": [],
+        "newer_series": [],
+    }
+
+
+def _period_metrics(period_df: pd.DataFrame) -> dict:
+    if period_df.empty:
+        return {
+            "mean_score": 0.0,
+            "pct_time_high": 0.0,
+            "pct_time_medium": 0.0,
+            "pct_time_low": 0.0,
+            "avg_high_zones": 0.0,
+            "avg_medium_zones": 0.0,
+            "observations": 0,
+            "snapshots": 0,
+        }
+
+    snapshot_counts = (
+        period_df.groupby("timestamp")["score"]
+        .agg(
+            high_zones=lambda s: int((s >= 0.70).sum()),
+            medium_zones=lambda s: int(((s >= 0.40) & (s < 0.70)).sum()),
+        )
+        .reset_index()
+    )
+    return {
+        "mean_score": round(float(period_df["score"].mean()), 4),
+        "pct_time_high": round(float((period_df["score"] >= 0.70).mean()), 4),
+        "pct_time_medium": round(float(((period_df["score"] >= 0.40) & (period_df["score"] < 0.70)).mean()), 4),
+        "pct_time_low": round(float((period_df["score"] < 0.40).mean()), 4),
+        "avg_high_zones": round(float(snapshot_counts["high_zones"].mean()) if not snapshot_counts.empty else 0.0, 4),
+        "avg_medium_zones": round(float(snapshot_counts["medium_zones"].mean()) if not snapshot_counts.empty else 0.0, 4),
+        "observations": int(len(period_df)),
+        "snapshots": int(period_df["timestamp"].nunique()),
+    }
+
+
+def _period_series(period_df: pd.DataFrame) -> list[dict]:
+    if period_df.empty:
+        return []
+    grouped = (
+        period_df.groupby("timestamp")["score"]
+        .agg(
+            mean_score="mean",
+            high_zones=lambda s: int((s >= 0.70).sum()),
+            medium_zones=lambda s: int(((s >= 0.40) & (s < 0.70)).sum()),
+            low_zones=lambda s: int((s < 0.40).sum()),
+            observations="count",
+        )
+        .reset_index()
+        .sort_values("timestamp")
+    )
+    series = []
+    for idx, row in grouped.iterrows():
+        series.append({
+            "point": int(len(series) + 1),
+            "timestamp": row["timestamp"].isoformat(),
+            "mean_score": round(float(row["mean_score"]), 4),
+            "high_zones": int(row["high_zones"]),
+            "medium_zones": int(row["medium_zones"]),
+            "low_zones": int(row["low_zones"]),
+            "observations": int(row["observations"]),
+        })
+    return series
+
+
+def _build_trend_comparison(df: pd.DataFrame, mid: pd.Timestamp) -> dict:
+    older = df[df["timestamp"] < mid].copy()
+    newer = df[df["timestamp"] >= mid].copy()
+    older_metrics = _period_metrics(older)
+    newer_metrics = _period_metrics(newer)
+    metric_delta = {}
+    for key, new_value in newer_metrics.items():
+        old_value = older_metrics.get(key)
+        if isinstance(new_value, (int, float)) and isinstance(old_value, (int, float)):
+            metric_delta[key] = round(float(new_value) - float(old_value), 4)
+
+    def window_payload(label: str, period_df: pd.DataFrame, metrics: dict) -> dict:
+        if period_df.empty:
+            return {"label": label, "start": None, "end": None, "metrics": metrics}
+        return {
+            "label": label,
+            "start": period_df["timestamp"].min().isoformat(),
+            "end": period_df["timestamp"].max().isoformat(),
+            "metrics": metrics,
+        }
+
+    return {
+        "older_window": window_payload("Older period", older, older_metrics),
+        "newer_window": window_payload("Newer period", newer, newer_metrics),
+        "metric_delta": metric_delta,
+        "older_series": _period_series(older),
+        "newer_series": _period_series(newer),
+    }
 
 
 def _psi_level(psi: float) -> str:
@@ -159,6 +262,7 @@ def get_zone_performance(days: int = 7):
             "chronic_high_risk": [],
             "most_improved":     [],
             "deteriorating":     [],
+            "trend_comparison": _empty_trend_comparison(),
             "note": "No zone score history yet — run the scoring pipeline to populate.",
         }
 
@@ -179,6 +283,7 @@ def get_zone_performance(days: int = 7):
     if not records:
         return {"generated_at": _now_iso(), "observation_days": days,
                 "chronic_high_risk": [], "most_improved": [], "deteriorating": [],
+                "trend_comparison": _empty_trend_comparison(),
                 "note": "History file exists but contains no parseable records."}
 
     df = pd.DataFrame(records)
@@ -192,6 +297,7 @@ def get_zone_performance(days: int = 7):
     if df.empty:
         return {"generated_at": _now_iso(), "observation_days": days,
                 "chronic_high_risk": [], "most_improved": [], "deteriorating": [],
+                "trend_comparison": _empty_trend_comparison(),
                 "note": f"No data within the last {days} days."}
 
     # Load zone name lookup from predictions.csv
@@ -215,6 +321,7 @@ def get_zone_performance(days: int = 7):
     # Compute per-zone stats using mid-point split for trend
     half = pd.Timedelta(days=days / 2)
     mid  = pd.Timestamp.now(tz="UTC") - half
+    trend_comparison = _build_trend_comparison(df, mid)
 
     entries = []
     for zone_id, grp in df.groupby("zone_id"):
@@ -269,6 +376,7 @@ def get_zone_performance(days: int = 7):
         "chronic_high_risk": chronic,
         "most_improved":     improved,
         "deteriorating":     deteriorating,
+        "trend_comparison":  trend_comparison,
         "note": note,
     }
 

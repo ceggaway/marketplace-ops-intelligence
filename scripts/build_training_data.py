@@ -280,8 +280,8 @@ def main():
     featured = build_features(hourly)
 
     # ── Add target label
-    featured["supply_shortage"] = _make_target(featured)
-    shortage_rate = (featured["supply_shortage"] == 1).mean()
+    featured["supply_depletion_event"] = _make_target(featured)
+    shortage_rate = (featured["supply_depletion_event"] == 1).mean()
     print(f"  {len(featured):,} rows  |  shortage rate: {shortage_rate:.2%}")
 
     # ── Save

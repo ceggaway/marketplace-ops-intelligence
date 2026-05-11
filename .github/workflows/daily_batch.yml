@@ -24,41 +24,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Ensure trained model exists (train if model.pkl is missing)
-        run: |
-          python - <<'EOF'
-          import json, pathlib, sys, re
-
-          reg_path = pathlib.Path("data/registry/registry.json")
-          active = None
-          if reg_path.exists():
-              # Python json accepts NaN; use re to normalise it to null first so
-              # any downstream tooling also parses the file safely.
-              raw = reg_path.read_text()
-              raw_clean = re.sub(r':\s*NaN\b', ': null', raw)
-              if raw_clean != raw:
-                  reg_path.write_text(raw_clean)
-                  print("Normalised NaN → null in registry.json")
-              active = json.loads(raw_clean).get("active_version")
-
-          model_pkl = pathlib.Path(f"data/registry/models/{active}/model.pkl") if active else None
-          if active and model_pkl and model_pkl.exists():
-              print(f"Active model {active} found on disk — skipping training.")
-          else:
-              reason = "no active version in registry" if not active else f"model.pkl missing for {active}"
-              print(f"Training required: {reason}")
-              import subprocess
-              result = subprocess.run(
-                  ["python", "scripts/run_training.py",
-                   "--version", "v_ci", "--days", "60",
-                   "--skip-gate", "--allow-synthetic"],
-                  capture_output=False
-              )
-              sys.exit(result.returncode)
-          EOF
+      - name: Restore or verify active model artifact
+        env:
+          MODEL_ARTIFACT_DIR: ${{ vars.MODEL_ARTIFACT_DIR }}
+        run: python scripts/bootstrap_model.py
 
       - name: Run daily batch scoring
-        run: python scripts/run_scoring.py --allow-synthetic
+        env:
+          LTA_API_KEY: ${{ secrets.LTA_API_KEY }}
+        run: python scripts/run_scoring.py --require-live-data
 
       - name: Upload outputs as artifact
         uses: actions/upload-artifact@v4

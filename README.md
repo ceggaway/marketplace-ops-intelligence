@@ -1,142 +1,198 @@
 # Marketplace Ops Intelligence
 
-Singapore taxi **supply depletion and imbalance intelligence** system.
+Singapore taxi supply depletion and imbalance intelligence system for ops teams.
 
-This repo does not directly observe rider demand. Instead, it combines:
-- real-time taxi availability and depletion signals
-- public exogenous pressure proxies such as rainfall and congestion
-- zone-level imbalance scoring
-- heuristic intervention policy outputs for ops teams
+Marketplace Ops Intelligence monitors zone-level taxi supply, estimates near-term depletion risk, recommends governed interventions, and tracks whether recommendations and models are working. It is built around a deliberately honest constraint: this repo does not directly observe rider demand. It uses public supply and stressor signals to reason about imbalance risk, not true demand.
 
-The current ML model is a **near-term supply depletion risk classifier**. It is one layer of the system, not the entire business problem.
+Full product spec: [docs/PRD.md](docs/PRD.md)
 
-## Problem Statement
+## What This System Does
 
-The operational question is not simply "where will taxis run out?" and it is not "what is true rider demand?".
+The operating loop is:
 
-This project currently aims to:
-1. estimate **near-term supply depletion risk**
-2. estimate **demand pressure** from public exogenous signals
-3. combine those into a **zone-level imbalance signal**
-4. support **intervention monitoring and future evaluation**
+1. See current marketplace health.
+2. Diagnose risky zones and supply drivers.
+3. Recommend human-approved actions.
+4. Learn from model health and recommendation outcomes.
 
-That framing is intentionally narrower and more honest than claiming direct demand estimation from taxi availability alone.
+The system does not dispatch drivers, set prices, auto-fire interventions, or estimate true rider demand.
+
+## Dashboards
+
+The React frontend has five primary dashboards:
+
+- **Project Brief** (`/project`): product summary, architecture, pipeline flow, dashboard map, and H3 spatial-mode notes.
+- **Overview** (`/`): current supply health, high-risk zones, rapid depletion, pending actions, model status, system status, recent model run, and recommended next action.
+- **Zone Risk Monitor** (`/zones`): searchable zone table, risk filters, selected-zone drilldown, key drivers, supply signals, recommendation context, risk distribution, and pipeline status.
+- **Action Center** (`/actions`): ranked recommendations, priority tabs, confidence, expected impact, estimated cost, governance tier, approver requirement, opportunity ratio, and followed/not-followed logging.
+- **Model Health** (`/health`): ROC AUC, F1, precision, recall, RMSE/probability-error metrics, PSI drift, model versions, MLflow-style model comparison, retraining trigger, data/prediction drift, operational run history, and alert banner.
+
+Supporting reporting surface:
+
+- **Reports** (`/reports`): zone performance, intervention outcomes, follow-through split, strongest context buckets, recent resolved outcomes, and model impact summary.
+
+## Business Logic Added From The Product Spec
+
+Recent business-logic additions from the updated PRD/operational brief:
+
+- Action governance tiers:
+  - Tier 0: monitor only
+  - Tier 1: ops alert
+  - Tier 2: driver-comms recommendation
+  - Tier 3: incentive proposal
+  - Tier 4: rebalancing recommendation
+- Explicit approver metadata per action.
+- Recommendation trigger condition.
+- Expected supply uplift.
+- Estimated recoverable opportunity, framed as illustrative opportunity rather than expected revenue.
+- Opportunity-to-cost ratio.
+- Outcome logging for governance and ROI fields.
+- Synthetic-control validity-gate helper for future causal evaluation.
+- YAML-configurable governance, ROI bridge, and causal gate thresholds.
 
 ## System Architecture
 
 ```text
 LTA / public signals
-  → ingestion
-  → preprocessing
-  → depletion-risk model (LightGBM)
-  → demand-pressure proxy scoring
-  → imbalance scoring
-  → baseline intervention policy + recommendation engine
-  → FastAPI
-  → React dashboard
+  -> ingestion
+  -> preprocessing
+  -> depletion-risk model
+  -> demand-pressure proxy scoring
+  -> imbalance scoring
+  -> governed recommendation engine
+  -> FastAPI
+  -> React dashboard
+  -> outcome and model-health reporting
 ```
 
 ### Layer 1: Supply Availability And Depletion Risk
+
 - Taxi availability snapshots are ingested at zone level.
 - Feature engineering builds lag, rolling, baseline, and depletion signals.
-- A LightGBM classifier estimates the probability that available taxi count will drop materially in the next hour.
+- A LightGBM classifier estimates near-term depletion risk.
+- The compatibility field `delay_risk_score` remains in outputs; preferred meaning is `depletion_risk_score`.
 
 ### Layer 2: Demand-Pressure Proxies
-- Time-of-day and day-of-week patterns
+
+Signals include:
+
+- Time of day and day of week
 - Weekend effects
 - Rainfall intensity
 - Traffic congestion
-- Placeholder train disruption flag interface
+- Public holiday / calendar effects
+- Live LTA TrainServiceAlerts disruption signal with zero-flag fallback
 
-These are **pressure proxies**, not direct demand labels.
+These are pressure proxies, not direct demand labels.
 
 ### Layer 3: Imbalance Scoring
-- Demand-pressure proxies are combined with live supply availability.
-- The repo now computes bounded imbalance scores using:
-  - ratio-style imbalance
-  - normalized-difference imbalance
 
-### Layer 4: Baseline Intervention Policy
-- A heuristic policy maps depletion risk and imbalance into:
-  - `no_action`
-  - `watchlist`
-  - `intervention`
+Demand-pressure proxies are combined with live supply availability to produce bounded imbalance scores:
 
-This is a transparent baseline policy. It is not an optimized decision engine.
+- `demand_pressure_score`
+- `demand_pressure_level`
+- `imbalance_score`
+- `imbalance_level`
+- `predicted_shortage`
+
+### Layer 4: Intervention Recommendation
+
+The recommendation engine maps depletion risk, predicted shortage, persistence, budget, cooldowns, and adjacent-zone surplus into action recommendations.
+
+Recommendations include:
+
+- action tier and tier label
+- required approver
+- trigger condition
+- expected supply uplift
+- estimated action cost
+- estimated recoverable opportunity
+- opportunity ratio
+- constraints triggered
+- confidence and priority
+
+The system recommends; humans approve and execute.
 
 ### Layer 5: Monitoring And Evaluation
-- Batch scoring metadata
-- drift monitoring
-- registry / promotion / rollback
+
+The monitoring layer includes:
+
+- model registry and promotion/rollback support
+- drift monitoring via PSI
+- pipeline run metadata
+- MLflow-style model-version comparison across classification and probability-error metrics
 - recommendation outcome logging
-- evaluation scaffolding for future treatment-vs-holdout comparisons
-
-## What Exists Today
-
-- ML pipeline for training and scoring
-- model registry and promotion gate
-- drift monitoring and operational health endpoints
-- real-time taxi availability ingestion
-- rainfall and congestion feature support
-- recommendation engine and ops dashboard
-- outcome logging for future policy learning
+- follow-through feedback
+- causal-validity scaffolding for future synthetic-control evaluation
 
 ## Data Sources
 
 Current and planned public-signal inputs:
 
-- **Taxi availability**: LTA DataMall taxi snapshots
-- **Weather**: Open-Meteo / rainfall features
+- **Taxi availability**: LTA taxi snapshots
+- **Weather / rainfall**: public weather and rainfall features
 - **Traffic congestion**: LTA travel-time derived congestion ratio
-- **Calendar effects**: hour-of-day, weekday, weekend, holidays
-- **Train disruption flag**: placeholder interface exists; live connector still TODO
-
-## Models And Scores
-
-### Depletion Risk Model
-- Type: `LightGBMClassifier`
-- Current target: large next-hour drop in available taxi count
-- Existing compatibility field: `delay_risk_score`
-- Preferred internal meaning: **depletion risk score**
-
-### Demand Pressure Score
-- Transparent heuristic composite from exogenous conditions
-- Bounded in `[0, 1]`
-- Does **not** claim to measure true demand directly
-
-### Imbalance Score
-- Derived from demand-pressure score and supply availability
-- Intended as a descriptive decision-support signal
-- Not a causal or equilibrium estimate
+- **Calendar effects**: hour of day, weekday, weekend, holidays
+- **Train disruption flag**: LTA TrainServiceAlerts-derived disruption signal with safe zero fallback
 
 ## Outputs
 
 Core batch outputs in `data/outputs/`:
+
 - `predictions.csv`
+- `h3_predictions.csv` when optional H3 scoring is run
 - `flagged_zones.csv`
 - `recommended_actions.csv`
 - `score_distribution.json`
 - `zone_scores_history.jsonl`
 - `pipeline.log`
+- `recommendation_outcomes.jsonl`
 
-Predictions now include additive descriptive fields such as:
+Prediction and recommendation outputs include fields such as:
+
 - `depletion_risk_score`
 - `demand_pressure_score`
 - `imbalance_score`
 - `imbalance_level`
 - `policy_action`
+- `recommended_action`
+- `action_tier`
+- `requires_approver`
+- `expected_supply_uplift`
+- `estimated_recoverable_opportunity`
+- `opportunity_ratio`
 
-Compatibility note:
-- `delay_risk_score` remains in the API and flat files because the frontend still depends on it.
+## API
 
-## Dashboard
+Base URL:
 
-The React dashboard surfaces:
-- current depletion risk
-- supply-state and rapid-depletion monitoring
-- imbalance-aware recommendation context
-- model health and drift
-- reporting on recommendation outcomes
+```text
+http://localhost:8000/api/v1
+```
+
+Primary endpoints:
+
+- `GET /overview`
+- `GET /zones`
+- `GET /zones/{zone_id}`
+- `GET /recommendations`
+- `POST /recommendations/{recommendation_id}/feedback`
+- `GET /model/status`
+- `GET /model/versions`
+- `GET /pipeline/latest-run`
+- `GET /monitoring/drift`
+- `GET /monitoring/history`
+- `GET /alerts`
+- `GET /health/services`
+- `POST /pipeline/retrain`
+- `GET /reports/zone-performance`
+- `GET /reports/outcomes`
+- `GET /reports/model-impact`
+- `GET /h3/cells`
+- `GET /h3/cells/{h3_cell}`
+- `GET /h3/heatmap`
+
+Full schema notes: [API_CONTRACT.md](API_CONTRACT.md)
 
 ## Running Locally
 
@@ -159,16 +215,36 @@ make train
 make score
 ```
 
+Optional H3 hex-cell scoring expects prepared H3 features in
+`data/processed/h3_supply_features.csv`:
+
+```bash
+python scripts/run_scoring.py --h3
+python scripts/run_scoring.py --h3 --zone
+```
+
 ### Start API
 
 ```bash
 make api
 ```
 
-### Start frontend
+API URL:
+
+```text
+http://localhost:8000
+```
+
+### Start Frontend
 
 ```bash
 make frontend
+```
+
+Frontend URL:
+
+```text
+http://localhost:5173
 ```
 
 ## Live / Continuous Operation
@@ -180,32 +256,70 @@ make poller
 make monitor-loop
 ```
 
-`Retrain Model` creates a new model version. It does **not** refresh stale prediction outputs by itself.
+`Retrain Model` creates a new model version. It does not refresh stale prediction outputs by itself; run scoring or the poller/monitor loop to refresh operational data.
+
+## Deployment
+
+Non-Docker deployment notes are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+Vercel or Netlify should be used for the React frontend only. The FastAPI API,
+poller, monitor loop, model registry, and runtime outputs need a backend host
+with persistent storage, such as Render, Railway, Fly.io, or a VM.
+
+Key deployment requirements:
+
+- Set `MARKETPLACE_DATA_DIR` to persistent storage.
+- Restore or train an active model artifact before serving the API.
+- Build the frontend with `npm --prefix frontend-react run build`.
+- Set frontend build env `VITE_API_BASE_URL=https://your-api-domain/api/v1`.
+- Set backend env `CORS_ORIGINS=https://your-frontend-domain`.
+- Run `python scripts/deploy_check.py --require-frontend-build` before routing traffic.
+- Use `python scripts/run_scoring.py --require-live-data` for production-like scoring.
+- Run optional H3 scoring only after `data/processed/h3_supply_features.csv` exists.
+
+### Frontend On Vercel Or Netlify
+
+Use either platform with the same Vite settings:
+
+- Root/base directory: `frontend-react`
+- Build command: `npm run build`
+- Publish/output directory: `dist`
+- Environment variable: `VITE_API_BASE_URL=https://your-api-domain/api/v1`
+
+After the frontend URL is live, add it to the backend `CORS_ORIGINS`.
+
+Recommended simple split:
+
+- Netlify or Vercel: frontend static site.
+- Render or Railway: FastAPI backend plus persistent disk for `MARKETPLACE_DATA_DIR`.
+
+## Tests
+
+```bash
+make test
+```
+
+Equivalent direct command:
+
+```bash
+.venv/bin/python -m pytest tests/
+```
 
 ## Limitations
 
-- Rider demand is **not directly observed**.
+- Rider demand is not directly observed.
 - Demand pressure is approximated from public exogenous signals.
-- The intervention layer is still heuristic and partly rule-driven.
-- Outcome tracking exists, but causal evaluation is still scaffolding, not a finished experimentation system.
-- Some API fields still retain legacy naming for compatibility.
+- Recommendation logic is still deterministic and heuristic.
+- Outcome tracking exists, but full causal evaluation is not yet wired end to end.
+- Synthetic-control validity gates exist as scaffolding, but there is not yet a full experiment result endpoint.
+- Some API and file fields retain legacy naming for frontend compatibility.
 
 ## Future Work
 
-- live train disruption connector
-- richer event and crowding signals
-- explicit treatment / holdout assignment in production policy flow
-- offline intervention evaluation and uplift-style policy comparison
-- optimized decision policy instead of heuristic baseline mapping
-
-## API
-
-Base URL:
-
-```text
-http://localhost:8000/api/v1
-```
-
-The API remains compatibility-first. Existing clients continue to work while newer depletion / imbalance fields are added incrementally.
-
-Full schema notes: [API_CONTRACT.md](API_CONTRACT.md)
+- Supply recovery simulator endpoint with uncertainty bands.
+- Switchback experiment designer.
+- Synthetic-control result endpoint backed by real intervention logs.
+- SHAP-style explanation endpoint.
+- Training-serving skew dashboard.
+- Richer event and crowding signals.
+- Optimized decision policy once enough followed recommendation outcomes exist.

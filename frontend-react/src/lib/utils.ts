@@ -4,12 +4,12 @@ export function cn(...inputs: ClassValue[]) { return clsx(inputs) }
 
 // ── Semantic colour tokens — dark navy palette ─────────────────────────────
 export const COLORS = {
-  high:    '#FF4D6D',
-  medium:  '#F59E0B',
-  low:     '#10D98A',
-  primary: '#4F8EF7',
-  purple:  '#A78BFA',
-  brand:   '#4F8EF7',
+  high:    '#D95252',
+  medium:  '#C97B30',
+  low:     '#3BAF73',
+  primary: '#4578C8',
+  purple:  '#8B6FCC',
+  brand:   '#4578C8',
 }
 
 export const RISK_COLOR: Record<string, string> = {

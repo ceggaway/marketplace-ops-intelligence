@@ -66,8 +66,15 @@ class ZoneSummary(BaseModel):
     neighbor_surplus: Optional[float] = None
     recommended_action: Optional[str] = None
     action_reason: Optional[str] = None
+    action_tier: Optional[int] = None
+    action_tier_label: Optional[str] = None
+    requires_approver: Optional[str] = None
+    trigger_condition: Optional[str] = None
     estimated_action_cost: Optional[float] = None
     estimated_shortage_reduction: Optional[float] = None
+    expected_supply_uplift: Optional[float] = None
+    estimated_recoverable_opportunity: Optional[float] = None
+    opportunity_ratio: Optional[float] = None
     budget_remaining: Optional[float] = None
     risk_level: Literal["high", "medium", "low"]
     recommendation: str
@@ -132,8 +139,15 @@ class RecommendationCard(BaseModel):
     neighbor_surplus: Optional[float] = None
     recommended_action: Optional[str] = None
     action_reason: Optional[str] = None
+    action_tier: Optional[int] = None
+    action_tier_label: Optional[str] = None
+    requires_approver: Optional[str] = None
+    trigger_condition: Optional[str] = None
     estimated_action_cost: Optional[float] = None
     estimated_shortage_reduction: Optional[float] = None
+    expected_supply_uplift: Optional[float] = None
+    estimated_recoverable_opportunity: Optional[float] = None
+    opportunity_ratio: Optional[float] = None
     budget_remaining: Optional[float] = None
 
 

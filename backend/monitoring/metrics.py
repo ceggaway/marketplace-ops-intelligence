@@ -11,7 +11,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-LOG_PATH = Path("data/outputs/pipeline.log")
+from backend.paths import outputs_dir
+
+LOG_PATH = outputs_dir() / "pipeline.log"
 
 
 def emit_run_metrics(run_meta: dict) -> None:

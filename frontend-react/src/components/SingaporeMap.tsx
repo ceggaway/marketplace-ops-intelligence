@@ -98,8 +98,8 @@ export default function SingaporeMap({ zones, selectedId, onSelect, mode = 'risk
 
     if (mode === 'blue') {
       return {
-        fillColor: isSelected ? COLORS.primary : 'rgba(79,142,247,0.25)',
-        color: isSelected ? COLORS.primary : 'rgba(79,142,247,0.40)',
+        fillColor: isSelected ? COLORS.primary : 'rgba(69,120,200,0.25)',
+        color: isSelected ? COLORS.primary : 'rgba(69,120,200,0.40)',
         weight: isSelected ? 2 : 1, fillOpacity: 1,
       }
     }

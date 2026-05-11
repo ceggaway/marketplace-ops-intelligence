@@ -35,8 +35,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from backend.paths import raw_dir
+
 TRAVEL_TIMES_API_URL = "https://datamall2.mytransport.sg/ltaodataservice/EstTravelTimes"
-SAMPLE_PATH          = Path("data/raw/sample_travel_times.json")
+SAMPLE_PATH          = raw_dir() / "sample_travel_times.json"
 
 # ---------------------------------------------------------------------------
 # Segment endpoint → approximate GPS coordinates

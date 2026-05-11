@@ -20,9 +20,10 @@ import pandas as pd
 
 from backend.monitoring.drift import compute_drift, load_reference_scores
 from backend.monitoring.metrics import get_latest_runs
+from backend.paths import outputs_dir
 from backend.rollback.rollback import check_and_rollback
 
-OUTPUTS_DIR = Path("data/outputs")
+OUTPUTS_DIR = outputs_dir()
 
 
 def run_once() -> dict | None:

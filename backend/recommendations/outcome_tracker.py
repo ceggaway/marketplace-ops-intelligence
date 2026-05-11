@@ -30,8 +30,9 @@ import pandas as pd
 
 from backend.recommendations.evaluation import assign_holdout_bucket
 from backend.recommendations.policy_effectiveness import action_type_from_recommendation, eta_bucket
+from backend.paths import outputs_dir
 
-OUTCOME_LOG = Path("data/outputs/recommendation_outcomes.jsonl")
+OUTCOME_LOG = outputs_dir() / "recommendation_outcomes.jsonl"
 RECOVERY_WINDOW_MIN = 30
 SCORE_RECOVERED_THRESH = 0.70   # score dropped to below this fraction of original
 SCORE_IMPROVED_THRESH  = 0.90   # score dropped to below this fraction of original
@@ -85,12 +86,19 @@ def log_recommendations(recs_df: pd.DataFrame) -> None:
                 "adjacent_risk_flag": bool(str(row.get("adjacent_risk_zones", "")).strip()),
                 "alternative_actions": str(row.get("alternative_actions", "")),
                 "estimated_cost_sgd": _float_or_none(row.get("estimated_cost_sgd")),
+                "action_tier": int(_float_or_none(row.get("action_tier")) or 0),
+                "action_tier_label": str(row.get("action_tier_label", "")),
+                "requires_approver": str(row.get("requires_approver", "none")),
+                "trigger_condition": str(row.get("trigger_condition", "")),
                 "expected_supply_response_30m": _float_or_none(row.get("expected_supply_response_30m")),
                 "expected_recovery_probability": _float_or_none(row.get("expected_recovery_probability")),
                 "expected_recovery_rate": _float_or_none(row.get("expected_recovery_rate")),
                 "expected_improvement_rate": _float_or_none(row.get("expected_improvement_rate")),
                 "estimated_score_delta": _float_or_none(row.get("estimated_score_delta")),
                 "expected_roi": _float_or_none(row.get("expected_roi")),
+                "expected_supply_uplift": _float_or_none(row.get("expected_supply_uplift")),
+                "estimated_recoverable_opportunity": _float_or_none(row.get("estimated_recoverable_opportunity")),
+                "opportunity_ratio": _float_or_none(row.get("opportunity_ratio")),
                 "decision_objective": str(row.get("decision_objective", "reliability_first")),
                 "winning_reason": str(row.get("winning_reason", "")),
                 "constraints_triggered": str(row.get("constraints_triggered", "")),

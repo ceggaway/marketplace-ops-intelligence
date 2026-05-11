@@ -21,15 +21,38 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from backend.api.schemas.responses import Alert, DriftReport, ModelStatus, ModelVersion, PipelineRun, ServicesHealth, ServiceStatus
+from backend.paths import logs_dir, outputs_dir
 from backend.registry import model_registry as registry
 from backend.monitoring.metrics import get_latest_runs
 from backend.monitoring.alerting import get_active_alerts
 
 router  = APIRouter()
-OUT_DIR = Path("data/outputs")
+OUT_DIR = outputs_dir()
+MODEL_HEALTH_METRIC_KEYS = [
+    "precision",
+    "recall",
+    "f1",
+    "roc_auc",
+    "accuracy",
+    "balanced_accuracy",
+    "log_loss",
+    "brier_score",
+    "mae",
+    "rmse",
+    "mse",
+    "r2",
+    "best_threshold",
+    "pred_mean",
+    "pred_std",
+    "pct_above_threshold",
+    "positive_rate",
+    "n_test",
+    "train_rows",
+    "val_rows",
+]
 
 
 @router.get("/model/status", response_model=ModelStatus)
@@ -49,11 +72,7 @@ def get_model_status():
     cand_id   = reg_data.get("candidate_version")
     cand_meta = registry.get_version_meta(cand_id) if cand_id else None
 
-    training_metrics = {
-        k: meta.get(k)
-        for k in ["precision", "recall", "f1", "roc_auc", "train_rows", "val_rows"]
-        if k in meta
-    }
+    training_metrics = {k: meta.get(k) for k in MODEL_HEALTH_METRIC_KEYS if k in meta}
 
     return {
         "active_version":    meta.get("version_id"),
@@ -61,7 +80,7 @@ def get_model_status():
         "last_retrained_at": meta.get("trained_at"),
         "training_metrics":  training_metrics,
         "candidate_version": cand_id,
-        "candidate_metrics": {k: cand_meta.get(k) for k in ["f1","roc_auc"]} if cand_meta else None,
+        "candidate_metrics": {k: cand_meta.get(k) for k in MODEL_HEALTH_METRIC_KEYS if k in cand_meta} if cand_meta else None,
     }
 
 
@@ -166,11 +185,22 @@ def get_alerts():
 
 
 @router.post("/pipeline/retrain")
-def trigger_retrain():
+def trigger_retrain(x_retrain_token: str | None = Header(default=None)):
     """
     Starts the training pipeline as a detached background subprocess.
     Returns immediately — training completes asynchronously (typically 1–3 min).
     """
+    enabled = os.environ.get("ENABLE_RETRAIN_ENDPOINT", "false").strip().lower() in {"1", "true", "yes"}
+    if not enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Retraining endpoint is disabled. Set ENABLE_RETRAIN_ENDPOINT=true to enable it.",
+        )
+
+    required_token = os.environ.get("RETRAIN_API_TOKEN", "").strip()
+    if required_token and x_retrain_token != required_token:
+        raise HTTPException(status_code=403, detail="Invalid retrain token")
+
     project_root = Path(__file__).resolve().parents[3]
     script       = project_root / "scripts" / "run_training.py"
 
@@ -178,13 +208,17 @@ def trigger_retrain():
         raise HTTPException(status_code=500, detail="Training script not found")
 
     version = f"v{int(time.time())}"
-    log_dir = project_root / "data" / "logs"
+    log_dir = logs_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "retrain.log"
+    cmd = [sys.executable, str(script), "--version", version]
+    allow_synthetic = os.environ.get("RETRAIN_ALLOW_SYNTHETIC", "false").strip().lower() in {"1", "true", "yes"}
+    if allow_synthetic:
+        cmd.append("--allow-synthetic")
 
     with open(log_path, "a") as log_f:
         subprocess.Popen(
-            [sys.executable, str(script), "--version", version, "--allow-synthetic"],
+            cmd,
             cwd=str(project_root),
             stdout=log_f,
             stderr=log_f,

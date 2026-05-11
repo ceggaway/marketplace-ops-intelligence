@@ -26,6 +26,7 @@ except ImportError:
 
 import pandas as pd
 
+from backend.paths import outputs_dir, processed_dir, raw_dir
 from backend.ingestion.loader import generate_synthetic_data
 from backend.validation.validator import validate
 from backend.preprocessing.pipeline import build_features
@@ -33,8 +34,8 @@ from backend.training.trainer import train
 from backend.registry import model_registry as registry
 from backend.promotion.gate import run_gate
 
-TRAINING_PARQUET = Path("data/processed/training.parquet")
-SNAPSHOT_DIR     = Path("data/raw/taxi_snapshots")
+TRAINING_PARQUET = processed_dir() / "training.parquet"
+SNAPSHOT_DIR     = raw_dir() / "taxi_snapshots"
 
 
 def main():
@@ -66,18 +67,18 @@ def main():
         print(f"[1/6] Loading training dataset from {data_path}...")
         feature_df = pd.read_parquet(data_path)
         using_real = True
-        shortage_rt = (feature_df["supply_shortage"] == 1).mean() if "supply_shortage" in feature_df.columns else float("nan")
+        shortage_rt = (feature_df["supply_depletion_event"] == 1).mean() if "supply_depletion_event" in feature_df.columns else float("nan")
         print(f"      {len(feature_df):,} rows  |  shortage rate: {shortage_rt:.2%}  [{time.time()-t0:.1f}s]")
 
     elif TRAINING_PARQUET.exists():
         # Pre-built dataset from `python scripts/build_training_data.py`
         print("[1/6] Loading pre-built real training dataset...")
         feature_df  = pd.read_parquet(TRAINING_PARQUET)
-        shortage_rt = (feature_df["supply_shortage"] == 1).mean() if "supply_shortage" in feature_df.columns else float("nan")
+        shortage_rt = (feature_df["supply_depletion_event"] == 1).mean() if "supply_depletion_event" in feature_df.columns else float("nan")
         print(f"      {len(feature_df):,} rows  |  shortage rate: {shortage_rt:.2%}  "
               f"(source: {TRAINING_PARQUET})  [{time.time()-t0:.1f}s]")
         # Fall back to synthetic if real data has no positive examples to learn from
-        if "supply_shortage" in feature_df.columns and feature_df["supply_shortage"].sum() == 0:
+        if "supply_depletion_event" in feature_df.columns and feature_df["supply_depletion_event"].sum() == 0:
             if args.allow_synthetic:
                 print(f"      WARNING: real data has 0 positive examples — falling back to {args.days}d synthetic.")
                 raw_df = generate_synthetic_data(days=args.days)
@@ -133,8 +134,8 @@ def main():
         pct_failed = len(failed_df) / len(raw_df) * 100 if len(raw_df) > 0 else 0
         print(f"      Clean: {len(clean_df):,}  |  Failed: {len(failed_df):,} ({pct_failed:.1f}%)")
         if not failed_df.empty:
-            Path("data/outputs").mkdir(parents=True, exist_ok=True)
-            failed_df.to_csv("data/outputs/failed_rows.csv", index=False)
+            outputs_dir().mkdir(parents=True, exist_ok=True)
+            failed_df.to_csv(outputs_dir() / "failed_rows.csv", index=False)
         if clean_df.empty:
             print("ERROR: No clean data after validation. Aborting.")
             sys.exit(1)
@@ -148,9 +149,9 @@ def main():
         t0 = time.time()
         feature_df = build_features(clean_df)
         print(f"      {len(feature_df):,} rows × {len(feature_df.columns)} features in {time.time()-t0:.1f}s")
-        Path("data/processed").mkdir(parents=True, exist_ok=True)
-        feature_df.to_parquet("data/processed/features.parquet", index=False)
-        print("      Saved → data/processed/features.parquet")
+        processed_dir().mkdir(parents=True, exist_ok=True)
+        feature_df.to_parquet(processed_dir() / "features.parquet", index=False)
+        print(f"      Saved → {processed_dir() / 'features.parquet'}")
     else:
         print(f"[3/6] Feature engineering skipped — using pre-built features "
               f"({len(feature_df.columns)} columns).")

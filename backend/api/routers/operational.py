@@ -22,10 +22,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.api.schemas.responses import OverviewResponse, RecommendationCard, ZoneDetail, ZoneSummary
+from backend.paths import outputs_dir
 from backend.recommendations import outcome_tracker
 
 router   = APIRouter()
-OUT_DIR  = Path("data/outputs")
+OUT_DIR  = outputs_dir()
 
 # Cost per zone requiring intervention — configurable via env var
 _INTERVENTION_COST_PER_ZONE = float(os.environ.get("INTERVENTION_COST_PER_ZONE", "1.50"))
@@ -305,8 +306,15 @@ def get_zones(risk_level: Optional[str] = None, region: Optional[str] = None):
             "neighbor_surplus": float(_clean(row.get("neighbor_surplus"), 0.0)),
             "recommended_action": str(_clean(row.get("recommended_action"), "monitor")),
             "action_reason": str(_clean(row.get("action_reason"), "")),
+            "action_tier": int(_clean(row.get("action_tier"), 0)),
+            "action_tier_label": str(_clean(row.get("action_tier_label"), "Monitor only")),
+            "requires_approver": str(_clean(row.get("requires_approver"), "none")),
+            "trigger_condition": str(_clean(row.get("trigger_condition"), "")),
             "estimated_action_cost": float(_clean(row.get("estimated_action_cost"), 0.0)),
             "estimated_shortage_reduction": float(_clean(row.get("estimated_shortage_reduction"), 0.0)),
+            "expected_supply_uplift": float(_clean(row.get("expected_supply_uplift"), 0.0)),
+            "estimated_recoverable_opportunity": float(_clean(row.get("estimated_recoverable_opportunity"), 0.0)),
+            "opportunity_ratio": float(_clean(row.get("opportunity_ratio"), 0.0)),
             "budget_remaining": float(_clean(row.get("budget_remaining"), 0.0)),
             "risk_level":          str(row.get("risk_level", "low")),
             "recommendation":      str(rec.get("recommendation", "No action required")),
@@ -365,8 +373,15 @@ def get_zone_detail(zone_id: int):
         "neighbor_surplus": float(_clean(row.get("neighbor_surplus"), 0.0)),
         "recommended_action": str(_clean(row.get("recommended_action"), "monitor")),
         "action_reason": str(_clean(row.get("action_reason"), "")),
+        "action_tier": int(_clean(row.get("action_tier"), 0)),
+        "action_tier_label": str(_clean(row.get("action_tier_label"), "Monitor only")),
+        "requires_approver": str(_clean(row.get("requires_approver"), "none")),
+        "trigger_condition": str(_clean(row.get("trigger_condition"), "")),
         "estimated_action_cost": float(_clean(row.get("estimated_action_cost"), 0.0)),
         "estimated_shortage_reduction": float(_clean(row.get("estimated_shortage_reduction"), 0.0)),
+        "expected_supply_uplift": float(_clean(row.get("expected_supply_uplift"), 0.0)),
+        "estimated_recoverable_opportunity": float(_clean(row.get("estimated_recoverable_opportunity"), 0.0)),
+        "opportunity_ratio": float(_clean(row.get("opportunity_ratio"), 0.0)),
         "budget_remaining": float(_clean(row.get("budget_remaining"), 0.0)),
         "risk_level":          str(row.get("risk_level", "low")),
         "explanation_tag":     str(row.get("explanation_tag", "")),
@@ -392,8 +407,44 @@ def get_recommendations(priority: Optional[str] = None):
         rec_df = rec_df.sort_values(["_sort", "delay_risk_score"], ascending=[True, False])
         rec_df = rec_df.drop(columns=["_sort"])
 
-    # Convert NaN/NaT to None before serialisation so FastAPI emits JSON null
-    # instead of pandas' default "NaT" or "NaN" strings.
+    string_defaults = {
+        "zone_name": "",
+        "region": "",
+        "risk_level": "low",
+        "issue_detected": "",
+        "recommendation": "No action required",
+        "expected_impact": "",
+        "priority": "low",
+        "explanation_tag": "",
+        "severity_bucket": "low",
+        "recommended_action": "monitor",
+        "action_reason": "",
+        "root_cause": "",
+        "action_id": "",
+        "action_type": "",
+        "action_tier_label": "Monitor only",
+        "requires_approver": "none",
+        "trigger_condition": "",
+        "pricing_level": "none",
+        "incentive_level": "none",
+        "push_level": "none",
+        "confidence_band": "low",
+        "policy_rank_reason": "",
+        "decision_objective": "reliability_first",
+        "winning_reason": "",
+        "constraints_triggered": "[]",
+        "alternative_actions": "[]",
+        "policy_action": "no_action",
+        "policy_reason": "",
+        "network_warning": "",
+        "adjacent_risk_zones": "",
+    }
+    for col, default in string_defaults.items():
+        if col in rec_df.columns:
+            rec_df[col] = rec_df[col].fillna(default)
+
+    # Convert remaining NaN/NaT to None before serialisation so FastAPI emits
+    # JSON null instead of pandas' default "NaT" or "NaN" strings.
     rec_df = rec_df.where(rec_df.notna(), other=None)
     return json.loads(rec_df.to_json(orient="records", date_format="iso"))
 

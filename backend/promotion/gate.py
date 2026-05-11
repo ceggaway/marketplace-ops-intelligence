@@ -23,9 +23,10 @@ import numpy as np
 import pandas as pd
 
 from backend.registry import model_registry as registry
+from backend.paths import registry_dir
 from backend.training.evaluator import compare_to_active
 
-REGISTRY_DIR = Path("data/registry")
+REGISTRY_DIR = registry_dir()
 MODELS_DIR   = REGISTRY_DIR / "models"
 
 MIN_F1  = 0.50

@@ -45,8 +45,15 @@ export interface Zone {
   neighbor_surplus?: number | null;
   recommended_action?: string | null;
   action_reason?: string | null;
+  action_tier?: number | null;
+  action_tier_label?: string | null;
+  requires_approver?: string | null;
+  trigger_condition?: string | null;
   estimated_action_cost?: number | null;
   estimated_shortage_reduction?: number | null;
+  expected_supply_uplift?: number | null;
+  estimated_recoverable_opportunity?: number | null;
+  opportunity_ratio?: number | null;
   budget_remaining?: number | null;
   taxi_count: number; current_supply: number;
   depletion_rate_1h: number; supply_vs_yesterday: number;
@@ -94,8 +101,15 @@ export interface Recommendation {
   neighbor_surplus?: number | null;
   recommended_action?: string | null;
   action_reason?: string | null;
+  action_tier?: number | null;
+  action_tier_label?: string | null;
+  requires_approver?: string | null;
+  trigger_condition?: string | null;
   estimated_action_cost?: number | null;
   estimated_shortage_reduction?: number | null;
+  expected_supply_uplift?: number | null;
+  estimated_recoverable_opportunity?: number | null;
+  opportunity_ratio?: number | null;
   budget_remaining?: number | null;
   issue_detected: string; recommendation: string;
   expected_impact: string; explanation_tag: string;
@@ -129,8 +143,13 @@ export interface Recommendation {
 }
 
 export interface TrainingMetrics {
-  f1?: number; roc_auc?: number; precision?: number;
-  recall?: number; train_rows?: number; val_rows?: number;
+  f1?: number | null; roc_auc?: number | null; precision?: number | null;
+  recall?: number | null; accuracy?: number | null; balanced_accuracy?: number | null;
+  log_loss?: number | null; brier_score?: number | null;
+  mae?: number | null; rmse?: number | null; mse?: number | null; r2?: number | null;
+  best_threshold?: number | null; pred_mean?: number | null; pred_std?: number | null;
+  pct_above_threshold?: number | null; positive_rate?: number | null; n_test?: number | null;
+  train_rows?: number | null; val_rows?: number | null;
 }
 export interface ModelStatus {
   active_version?: string | null
@@ -146,7 +165,7 @@ export interface ModelVersion {
   status: string
   trained_at?: string | null
   promoted_at?: string | null
-  metrics: Record<string, number>
+  metrics: Record<string, number | null>
 }
 
 export interface LatestRun {
@@ -238,12 +257,49 @@ export interface ZonePerformanceEntry {
   observations: number
 }
 
+export interface ZonePerformancePeriodMetrics {
+  mean_score: number
+  pct_time_high: number
+  pct_time_medium: number
+  pct_time_low: number
+  avg_high_zones: number
+  avg_medium_zones: number
+  observations: number
+  snapshots: number
+}
+
+export interface ZonePerformanceWindow {
+  label: string
+  start?: string | null
+  end?: string | null
+  metrics: Partial<ZonePerformancePeriodMetrics>
+}
+
+export interface ZonePerformanceSeriesPoint {
+  point: number
+  timestamp: string
+  mean_score: number
+  high_zones: number
+  medium_zones: number
+  low_zones: number
+  observations: number
+}
+
+export interface ZoneTrendComparison {
+  older_window: ZonePerformanceWindow
+  newer_window: ZonePerformanceWindow
+  metric_delta: Partial<ZonePerformancePeriodMetrics>
+  older_series: ZonePerformanceSeriesPoint[]
+  newer_series: ZonePerformanceSeriesPoint[]
+}
+
 export interface ZonePerformanceReport {
   generated_at: string
   observation_days: number
   chronic_high_risk: ZonePerformanceEntry[]
   most_improved: ZonePerformanceEntry[]
   deteriorating: ZonePerformanceEntry[]
+  trend_comparison?: ZoneTrendComparison
   note?: string
 }
 
@@ -306,6 +362,41 @@ export interface ModelImpactReport {
   recommendation: string
 }
 
+// ── H3 spatial types ─────────────────────────────────────────────────────────
+
+export interface H3CellSummary {
+  h3_cell: string
+  parent_zone: string
+  taxi_count: number
+  baseline_supply: number
+  depletion_risk_score: number
+  demand_pressure_proxy: number
+  supply_gap: number
+  imbalance_score: number
+  predicted_shortage: number
+  severity_bucket: string
+  recommended_action: string
+  action_reason: string
+  sparse_cell_flag: boolean
+  timestamp: string
+}
+
+export interface H3CellDetail extends H3CellSummary {
+  boundary: [number, number][]   // [[lat, lon], ...]
+}
+
+export interface H3HeatmapCell {
+  h3_cell: string
+  parent_zone: string
+  taxi_count: number
+  baseline_supply: number
+  depletion_risk_score: number
+  predicted_shortage: number
+  severity_bucket: string
+  sparse_cell_flag: boolean
+  boundary: [number, number][]   // [[lat, lon], ...]
+}
+
 export const api = {
   overview: () => get<Overview>('/overview'),
   zones: (risk_level?: string, region?: string) => {
@@ -338,4 +429,19 @@ export const api = {
   reportZonePerformance: (days = 7) => get<ZonePerformanceReport>(`/reports/zone-performance?days=${days}`),
   reportOutcomes: () => get<OutcomeReport>('/reports/outcomes'),
   reportModelImpact: () => get<ModelImpactReport>('/reports/model-impact'),
+  // H3 spatial
+  h3Cells: (params?: { parent_zone?: string; severity_bucket?: string; sparse?: boolean }) => {
+    const p = new URLSearchParams()
+    if (params?.parent_zone)     p.set('parent_zone', params.parent_zone)
+    if (params?.severity_bucket) p.set('severity_bucket', params.severity_bucket)
+    if (params?.sparse != null)  p.set('sparse', String(params.sparse))
+    return get<H3CellSummary[]>(`/h3/cells${p.toString() ? '?' + p : ''}`)
+  },
+  h3CellDetail: (h3_cell: string) => get<H3CellDetail>(`/h3/cells/${h3_cell}`),
+  h3Heatmap: (params?: { parent_zone?: string; min_risk?: number }) => {
+    const p = new URLSearchParams()
+    if (params?.parent_zone) p.set('parent_zone', params.parent_zone)
+    if (params?.min_risk != null) p.set('min_risk', String(params.min_risk))
+    return get<H3HeatmapCell[]>(`/h3/heatmap${p.toString() ? '?' + p : ''}`)
+  },
 }

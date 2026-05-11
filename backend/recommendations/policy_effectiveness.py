@@ -12,8 +12,9 @@ import json
 from pathlib import Path
 from typing import Iterable
 
+from backend.paths import outputs_dir
 
-OUTCOME_LOG = Path("data/outputs/recommendation_outcomes.jsonl")
+OUTCOME_LOG = outputs_dir() / "recommendation_outcomes.jsonl"
 MIN_EVIDENCE = 3
 
 

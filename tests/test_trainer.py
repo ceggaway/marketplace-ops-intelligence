@@ -69,20 +69,18 @@ def test_make_target_no_shortage_when_drop_small():
     assert int(target.iloc[0]) == 0
 
 
-def test_make_target_last_row_not_shortage_when_no_next():
-    # shift(-1) fills missing with NaN (float), comparison gives False → label 0
+def test_make_target_last_row_is_missing_when_no_next():
     df = _mini_zone_df(n_hours=5)
     target = _make_target(df)
-    # Last row has no next hour — comparison with NaN → False → 0
-    assert int(target.iloc[-1]) == 0
+    assert pd.isna(target.iloc[-1])
 
 
-def test_make_target_all_rows_have_label():
+def test_make_target_terminal_row_per_zone_is_missing():
     df = pd.concat([_mini_zone_df(zone_id=1, n_hours=4),
                     _mini_zone_df(zone_id=2, n_hours=4)])
     target = _make_target(df)
-    # All rows get a binary label (0 or 1), no NaN in practice
-    assert target.notna().all()
+    assert target.isna().sum() == 2
+    assert target.notna().sum() == len(df) - 2
 
 
 def test_make_target_length_matches_input():
