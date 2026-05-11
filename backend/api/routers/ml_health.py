@@ -233,6 +233,49 @@ def trigger_retrain(x_retrain_token: str | None = Header(default=None)):
     }
 
 
+@router.post("/pipeline/score")
+def trigger_score(x_retrain_token: str | None = Header(default=None)):
+    """
+    Starts the scoring pipeline as a detached background subprocess.
+    Returns immediately — scoring completes asynchronously (typically 1–2 min).
+    """
+    enabled = os.environ.get("ENABLE_RETRAIN_ENDPOINT", "false").strip().lower() in {"1", "true", "yes"}
+    if not enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Scoring endpoint is disabled. Set ENABLE_RETRAIN_ENDPOINT=true to enable it.",
+        )
+
+    required_token = os.environ.get("RETRAIN_API_TOKEN", "").strip()
+    if required_token and x_retrain_token != required_token:
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    project_root = Path(__file__).resolve().parents[3]
+    script = project_root / "scripts" / "run_scoring.py"
+
+    if not script.exists():
+        raise HTTPException(status_code=500, detail="Scoring script not found")
+
+    log_dir = logs_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "scoring.log"
+
+    with open(log_path, "a") as log_f:
+        subprocess.Popen(
+            [sys.executable, str(script)],
+            cwd=str(project_root),
+            stdout=log_f,
+            stderr=log_f,
+            start_new_session=True,
+        )
+
+    return {
+        "status":  "started",
+        "message": "Scoring pipeline started. Predictions will appear in Zone Risk when complete.",
+        "log":     str(log_path),
+    }
+
+
 @router.get("/health/services", response_model=ServicesHealth)
 def get_services_health():
     """

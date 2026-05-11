@@ -12,17 +12,49 @@ Docs available at:
 """
 
 import os
+import subprocess
+import sys
+import threading
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routers import operational, ml_health, ai_chat, reports
 from backend.api.routers import h3 as h3_router
+from backend.paths import outputs_dir, registry_dir
+
+
+def _auto_bootstrap_and_score() -> None:
+    """Run bootstrap + scoring once on startup if predictions are missing."""
+    project_root = Path(__file__).resolve().parents[2]
+    predictions = outputs_dir() / "predictions.csv"
+    active = (registry_dir() / "registry.json")
+
+    if predictions.exists():
+        return
+
+    log_dir = project_root / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(log_dir / "startup.log", "a") as f:
+        if not active.exists():
+            allow_synthetic = os.environ.get("BOOTSTRAP_ALLOW_SYNTHETIC", "false").lower() in {"1", "true", "yes"}
+            cmd = [sys.executable, "scripts/bootstrap_model.py"]
+            if allow_synthetic:
+                cmd.append("--allow-synthetic")
+            subprocess.run(cmd, cwd=str(project_root), stdout=f, stderr=f)
+
+        subprocess.run(
+            [sys.executable, "scripts/run_scoring.py"],
+            cwd=str(project_root), stdout=f, stderr=f,
+        )
 
 app = FastAPI(
     title="Marketplace Ops Intelligence API",
     description="Backend API for the operations command center dashboard.",
     version="1.0.0",
+    on_startup=[lambda: threading.Thread(target=_auto_bootstrap_and_score, daemon=True).start()],
 )
 
 # CORS_ORIGINS env var: comma-separated list of allowed origins.
