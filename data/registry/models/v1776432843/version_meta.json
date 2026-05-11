@@ -1,0 +1,11 @@
+{
+  "version_id": "v1776432843",
+  "trained_at": "2026-04-17T13:34:12.378090+00:00",
+  "status": "active",
+  "train_rows": 95040,
+  "val_rows": 23760,
+  "roc_auc": 0.8865,
+  "f1": 0.5316,
+  "target": "supply_shortage",
+  "promoted_at": "2026-04-17T13:34:12.395926+00:00"
+}

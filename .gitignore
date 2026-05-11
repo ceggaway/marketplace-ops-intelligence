@@ -13,14 +13,11 @@ data/raw/taxi_snapshots/
 data/raw/carpark_snapshots/
 data/raw/travel_time_snapshots/
 data/processed/
-data/outputs/
-data/registry/models/
 data/logs/
 
-# Model artifacts
-*.pkl
-*.joblib
-*.bin
+# Model artifacts — allow bootstrap artifacts for deployment
+# data/outputs/ — committed so Render has predictions on startup
+# data/registry/ — committed so Render has active model on startup
 
 # Notebooks
 .ipynb_checkpoints/

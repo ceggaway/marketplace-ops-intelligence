@@ -1,0 +1,10 @@
+{
+  "version_id": "v1776431325",
+  "trained_at": "2026-04-17T13:08:47.696048+00:00",
+  "status": "candidate",
+  "train_rows": 88,
+  "val_rows": 22,
+  "roc_auc": NaN,
+  "f1": 0.0,
+  "target": "supply_shortage"
+}
