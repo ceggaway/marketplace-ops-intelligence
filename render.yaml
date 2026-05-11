@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: marketplace-ops-intelligence
+    runtime: python
+    plan: starter
+    buildCommand: |
+      pip install -r requirements.deploy.txt
+    startCommand: |
+      python scripts/bootstrap_model.py --train-if-missing --allow-synthetic &&
+      python scripts/run_scoring.py --allow-synthetic &&
+      python scripts/deploy_check.py --require-predictions &&
+      python -m uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MARKETPLACE_DATA_DIR
+        value: /var/data
+      - key: CORS_ORIGINS
+        value: https://marketplace-ops-intelligence.vercel.app
+      - key: BOOTSTRAP_TRAIN_IF_MISSING
+        value: "true"
+      - key: BOOTSTRAP_ALLOW_SYNTHETIC
+        value: "true"
+      - key: ENABLE_RETRAIN_ENDPOINT
+        value: "false"
+      - key: ENABLE_SCORING_ENDPOINT
+        value: "false"
+      - key: SCORING_ALLOW_SYNTHETIC
+        value: "true"
+    disk:
+      name: marketplace-ops-data
+      mountPath: /var/data
+      sizeGB: 1

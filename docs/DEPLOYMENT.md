@@ -29,11 +29,15 @@ Run these as separate process roles:
 The included `Procfile` defines:
 
 ```text
-web: python -m uvicorn backend.api.main:app --host 0.0.0.0 --port ${PORT:-8000}
+web: python scripts/bootstrap_model.py --train-if-missing --allow-synthetic && python scripts/run_scoring.py --allow-synthetic && python scripts/deploy_check.py --require-predictions && python -m uvicorn backend.api.main:app --host 0.0.0.0 --port ${PORT:-8000}
 poller: python -m backend.ingestion.lta_poller
 monitor: python scripts/run_monitoring.py --loop --interval ${MONITOR_INTERVAL_SEC:-300}
-release: python scripts/bootstrap_model.py && python scripts/deploy_check.py --require-frontend-build
+release: python scripts/bootstrap_model.py --train-if-missing --allow-synthetic && python scripts/run_scoring.py --allow-synthetic && python scripts/deploy_check.py --require-predictions
 ```
+
+The included `render.yaml` is the preferred Render setup. It attaches a
+persistent disk at `/var/data`, installs backend dependencies, bootstraps the
+model, runs one scoring batch, requires `predictions.csv`, then starts FastAPI.
 
 ## Required Persistent Storage
 
@@ -56,6 +60,8 @@ CORS_ORIGINS=https://your-frontend.example.com
 LTA_API_KEY=...
 VITE_API_BASE_URL=https://your-api.example.com/api/v1
 ENABLE_RETRAIN_ENDPOINT=false
+ENABLE_SCORING_ENDPOINT=false
+SCORING_ALLOW_SYNTHETIC=false
 RETRAIN_ALLOW_SYNTHETIC=false
 BOOTSTRAP_ALLOW_SYNTHETIC=false
 ```
@@ -89,6 +95,16 @@ Use these settings on either platform:
 - Build command: `npm run build`
 - Publish/output directory: `dist`
 - Environment variable: `VITE_API_BASE_URL=https://your-api-domain/api/v1`
+
+For the current hosted demo:
+
+```text
+VITE_API_BASE_URL=https://marketplace-ops-intelligence.onrender.com/api/v1
+```
+
+The `frontend-react/vercel.json` file also rewrites `/api/*` to the Render API,
+so the app still works if `VITE_API_BASE_URL` is omitted and the frontend uses
+the relative `/api/v1` fallback.
 
 After deployment, set the backend environment variable:
 
@@ -138,6 +154,50 @@ python scripts/deploy_check.py --require-frontend-build --require-predictions
 
 The check verifies writable persistent directories, active model artifacts,
 frontend build output, and prediction freshness when predictions exist.
+
+## Deployed Empty Zone Risk Diagnosis
+
+If the Zone Risk page shows:
+
+```text
+No zone scores available
+Run the scoring pipeline to populate predictions before using the zone monitor.
+```
+
+check the backend first:
+
+```bash
+curl https://marketplace-ops-intelligence.onrender.com/api/v1/health/services
+curl https://marketplace-ops-intelligence.onrender.com/api/v1/pipeline/latest-run
+curl https://marketplace-ops-intelligence.onrender.com/api/v1/zones
+```
+
+The broken state is:
+
+- `Prediction API`: `down`, `Output file not found`
+- `Data Pipeline`: `down`, `Output file not found`
+- `Model Serving`: `down`, `No active model in registry`
+- `/pipeline/latest-run`: `run_status` is `never_run`
+- `/zones`: `[]`
+
+That means Render has no runtime ML state. Fix Render by using `render.yaml` or
+an equivalent start command that runs:
+
+```bash
+python scripts/bootstrap_model.py --train-if-missing --allow-synthetic
+python scripts/run_scoring.py --allow-synthetic
+python scripts/deploy_check.py --require-predictions
+python -m uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT
+```
+
+Also verify Vercel is not serving the SPA for API requests:
+
+```bash
+curl -i https://marketplace-ops-intelligence.vercel.app/api/v1/zones
+```
+
+If that returns `index.html`, set `VITE_API_BASE_URL` in Vercel or deploy the
+included `frontend-react/vercel.json` rewrite.
 
 ## Production Scoring Policy
 

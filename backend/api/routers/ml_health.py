@@ -239,11 +239,14 @@ def trigger_score(x_retrain_token: str | None = Header(default=None)):
     Starts the scoring pipeline as a detached background subprocess.
     Returns immediately — scoring completes asynchronously (typically 1–2 min).
     """
-    enabled = os.environ.get("ENABLE_RETRAIN_ENDPOINT", "false").strip().lower() in {"1", "true", "yes"}
+    enabled = (
+        os.environ.get("ENABLE_SCORING_ENDPOINT", "").strip().lower() in {"1", "true", "yes"}
+        or os.environ.get("ENABLE_RETRAIN_ENDPOINT", "false").strip().lower() in {"1", "true", "yes"}
+    )
     if not enabled:
         raise HTTPException(
             status_code=403,
-            detail="Scoring endpoint is disabled. Set ENABLE_RETRAIN_ENDPOINT=true to enable it.",
+            detail="Scoring endpoint is disabled. Set ENABLE_SCORING_ENDPOINT=true to enable it.",
         )
 
     required_token = os.environ.get("RETRAIN_API_TOKEN", "").strip()
@@ -260,9 +263,13 @@ def trigger_score(x_retrain_token: str | None = Header(default=None)):
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "scoring.log"
 
+    cmd = [sys.executable, str(script)]
+    if os.environ.get("SCORING_ALLOW_SYNTHETIC", "false").strip().lower() in {"1", "true", "yes"}:
+        cmd.append("--allow-synthetic")
+
     with open(log_path, "a") as log_f:
         subprocess.Popen(
-            [sys.executable, str(script)],
+            cmd,
             cwd=str(project_root),
             stdout=log_f,
             stderr=log_f,
