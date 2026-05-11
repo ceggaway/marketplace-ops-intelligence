@@ -29,23 +29,33 @@ def _auto_bootstrap_and_score() -> None:
     """Run bootstrap + scoring once on startup if predictions are missing."""
     project_root = Path(__file__).resolve().parents[2]
     predictions = outputs_dir() / "predictions.csv"
-    active = (registry_dir() / "registry.json")
+    registry_json = registry_dir() / "registry.json"
 
     if predictions.exists():
+        print("[startup] predictions.csv already exists — skipping auto-bootstrap.")
         return
 
-    log_dir = project_root / "data" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    print("[startup] No predictions found — running bootstrap + scoring...")
 
-    with open(log_dir / "startup.log", "a") as f:
-        if not active.exists():
-            cmd = [sys.executable, "scripts/bootstrap_model.py", "--train-if-missing", "--allow-synthetic"]
-            subprocess.run(cmd, cwd=str(project_root), stdout=f, stderr=f)
+    from backend.paths import logs_dir
+    logs_dir().mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir() / "startup.log"
 
-        subprocess.run(
+    with open(log_path, "a") as f:
+        if not registry_json.exists():
+            print("[startup] No model registry — training with synthetic data...")
+            r = subprocess.run(
+                [sys.executable, "scripts/bootstrap_model.py", "--train-if-missing", "--allow-synthetic"],
+                cwd=str(project_root), stdout=f, stderr=f,
+            )
+            print(f"[startup] bootstrap exit code: {r.returncode}")
+
+        print("[startup] Running scoring pipeline...")
+        r = subprocess.run(
             [sys.executable, "scripts/run_scoring.py", "--allow-synthetic"],
             cwd=str(project_root), stdout=f, stderr=f,
         )
+        print(f"[startup] scoring exit code: {r.returncode}")
 
 app = FastAPI(
     title="Marketplace Ops Intelligence API",
