@@ -28,6 +28,10 @@ import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import train_test_split
+try:
+    from sklearn.frozen import FrozenEstimator
+except ImportError:  # scikit-learn < 1.6
+    FrozenEstimator = None
 
 from backend.paths import registry_dir
 from backend.training.evaluator import evaluate
@@ -157,7 +161,7 @@ def train(
     # Post-hoc isotonic calibration on the held-out val set.
     # Isotonic regression corrects systematic over- or under-confidence in
     # the raw LightGBM probabilities without touching the ranking (AUC unchanged).
-    model = CalibratedClassifierCV(base_model, method="isotonic", cv="prefit")
+    model = _calibrated_prefit_model(base_model)
     model.fit(X_val, y_val)
 
     metrics = evaluate(model, X_val, y_val)
@@ -171,6 +175,18 @@ def train(
 
     _save_artifacts(model, X, metrics, version_id)
     return metrics
+
+
+def _calibrated_prefit_model(base_model):
+    """Return a post-hoc calibrator for an already-fitted estimator.
+
+    scikit-learn 1.6+ removed ``cv="prefit"`` in favour of wrapping the fitted
+    estimator in ``FrozenEstimator``. CI uses a newer sklearn, while some local
+    environments still use the older API, so support both.
+    """
+    if FrozenEstimator is not None:
+        return CalibratedClassifierCV(FrozenEstimator(base_model), method="isotonic")
+    return CalibratedClassifierCV(base_model, method="isotonic", cv="prefit")
 
 
 def _split_train_val(
